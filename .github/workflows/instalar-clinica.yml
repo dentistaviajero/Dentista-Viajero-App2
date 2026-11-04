@@ -13,9 +13,9 @@ jobs:
       - name: Descargar repositorio
         uses: actions/checkout@v4
 
-      - name: Extraer aplicacion
+            - name: Extraer aplicacion
         run: |
-                    unzip -o dentista-viajero-clinica-v1.0.1-simplificada.zip -d /tmp/clinica
+          unzip -o dentista-viajero-clinica-v1.0.1-simplificada.zip -d /tmp/clinica
           cp -R /tmp/clinica/. .
       - name: Guardar archivos
         run: |
