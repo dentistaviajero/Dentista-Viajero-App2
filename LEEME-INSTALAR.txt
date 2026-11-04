@@ -1,0 +1,10 @@
+DENTISTA VIAJERO CLÍNICA - ACCESO DIRECTO
+1. Subir este ZIP a la raíz de dentistaviajero/Dentista-Viajero-App2
+2. Editar .github/workflows/instalar-clinica.yml usando el instalador existente:
+   unzip -o dentista-viajero-clinica-acceso-directo.zip -d /tmp/clinica
+   cp -R /tmp/clinica/. .
+3. Ejecutar Actions > Instalar Dentista Viajero Clinica > Run workflow.
+4. Esperar el despliegue en Cloudflare. Mantener DB y base D1 existentes.
+NO requiere nuevas migraciones. No introducir datos clínicos reales: esta variante
+NO restringe el acceso a la URL y permite leer y modificar todos los expedientes
+desde internet. Es apta para pruebas con datos ficticios, no para uso clínico real.
