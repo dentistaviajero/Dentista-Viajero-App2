@@ -1,0 +1,27 @@
+name: Instalar Dentista Viajero Clinica
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  instalar:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Descargar repositorio
+        uses: actions/checkout@v4
+
+      - name: Extraer aplicacion
+        run: |
+          unzip -o dentista-viajero-clinica-v1.0.0-cloudflare.zip -d /tmp/clinica
+          cp -R /tmp/clinica/dv-clinica-release/. .
+
+      - name: Guardar archivos
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .
+          git commit -m "Instalar Dentista Viajero Clinica v1.0.0" || exit 0
+          git push
