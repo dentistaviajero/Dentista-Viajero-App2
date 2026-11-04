@@ -1,4 +1,4 @@
-import { generateRegistrationOptions, verifyRegistrationResponse, generateAuthenticationOptions, verifyAuthenticationResponse } from '@simplewebauthn/server';
+import { createRemoteJWKSet, jwtVerify } from 'jose';
 
 const json=(data,status=200,extra={})=>new Response(JSON.stringify(data),{status,headers:{'content-type':'application/json; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff',...extra}});
 const err=(msg,status=400)=>json({error:msg},status);
@@ -9,9 +9,24 @@ const hash=async s=>b64url(new Uint8Array(await crypto.subtle.digest('SHA-256',n
 const randomToken=()=>b64url(crypto.getRandomValues(new Uint8Array(32)));
 const secureHeaders={'x-frame-options':'DENY','referrer-policy':'no-referrer','permissions-policy':'camera=(), microphone=(), geolocation=()','content-security-policy':"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"};
 async function body(req){const s=await req.text();if(s.length>1024*1024)throw Error('Solicitud demasiado grande');return s?JSON.parse(s):{};}
-async function user(req,db){const cookie=req.headers.get('cookie')||'';const token=cookie.match(/(?:^|;\s*)dv_session=([^;]+)/)?.[1];if(!token)return null;const row=await db.prepare('SELECT u.id,u.nombre,u.rol FROM app_sessions s JOIN app_users u ON s.user_id=u.id WHERE s.token_hash=? AND s.expira_en>? AND u.activo=1').bind(await hash(token),Date.now()).first();return row||null;}
-async function session(db,userId){const token=randomToken();await db.prepare('INSERT INTO app_sessions(token_hash,user_id,expira_en) VALUES(?,?,?)').bind(await hash(token),userId,Date.now()+7*86400000).run();return `dv_session=${token}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=604800`;}
-async function audit(db,u,action,entity,id){await db.prepare('INSERT INTO audit_events(id,actor_id,accion,entidad,entidad_id) VALUES(?,?,?,?,?)').bind(uuid(),u?.id||null,action,entity||null,id||null).run();}
+const ALLOWED_EMAILS=new Set(['dentistaviajero@gmail.com','parteraviajera@gmail.com']);
+let accessKeySet=null,accessKeyUrl='';
+async function user(req,env){
+ const domain=String(env.ACCESS_TEAM_DOMAIN||'').replace(/^https?:\/\//,'').replace(/\/$/,'');
+ const aud=String(env.ACCESS_AUD||'');
+ if(!domain||!aud)return null;
+ const token=req.headers.get('Cf-Access-Jwt-Assertion');
+ if(!token)return null;
+ const keyUrl=`https://${domain}/cdn-cgi/access/certs`;
+ if(!accessKeySet||accessKeyUrl!==keyUrl){accessKeySet=createRemoteJWKSet(new URL(keyUrl));accessKeyUrl=keyUrl;}
+ try{
+  const {payload}=await jwtVerify(token,accessKeySet,{issuer:`https://${domain}`,audience:aud,algorithms:['RS256']});
+  const email=String(payload.email||'').trim().toLowerCase();
+  if(!ALLOWED_EMAILS.has(email))return null;
+  return {id:email,nombre:email==='dentistaviajero@gmail.com'?'Dentista Viajero':'Partera Viajera',rol:'dentista',email};
+ }catch{return null;}
+}
+async function audit(db,u,action,entity,id){return; /* La bitácora se habilita con las migraciones */}
 function sameOrigin(req){const origin=req.headers.get('origin');return origin===new URL(req.url).origin;}
 async function throttle(req,db){const ip=req.headers.get('cf-connecting-ip')||'unknown';const key=await hash(ip);const now=Date.now();const row=await db.prepare('SELECT attempts,window_start FROM auth_attempts WHERE actor_hash=?').bind(key).first();if(row&&now-row.window_start<900000&&row.attempts>=12)return false;if(!row||now-row.window_start>=900000)await db.prepare('INSERT INTO auth_attempts(actor_hash,attempts,window_start) VALUES(?,1,?) ON CONFLICT(actor_hash) DO UPDATE SET attempts=1,window_start=excluded.window_start').bind(key,now).run();else await db.prepare('UPDATE auth_attempts SET attempts=attempts+1 WHERE actor_hash=?').bind(key).run();return true;}
 async function challenge(db,value,type,userId){const id=uuid();await db.prepare('INSERT INTO auth_challenges(id,challenge,tipo,user_id,expira_en) VALUES(?,?,?,?,?)').bind(id,value,type,userId||null,Date.now()+300000).run();return id;}
@@ -29,42 +44,10 @@ function checkData(data,spec){const out={};for(const k of spec.fields){if(data[k
 async function api(req,env){const db=env.DB;const url=new URL(req.url),p=url.pathname,m=req.method;
  if(!db)return err('Falta el enlace DB',503);
  if(m!=='GET'&&!sameOrigin(req))return err('Origen no autorizado',403);
- if(p==='/api/me'&&m==='GET'){const u=await user(req,db);return json({user:u});}
- if(p.startsWith('/api/auth/')&&p!=='/api/auth/logout'&&m==='POST'&&!await throttle(req,db))return err('Demasiados intentos. Espera 15 minutos.',429);
- if(p==='/api/auth/register/options'&&m==='POST'){
-  const data=await body(req);const count=await db.prepare('SELECT COUNT(*) n FROM app_users').first();const u=await user(req,db);
-  if(count.n===0){if(!env.BOOTSTRAP_SECRET||!data.secret||await hash(data.secret)!==await hash(env.BOOTSTRAP_SECRET))return err('Clave de instalación incorrecta',403);}
-  else if(!u||u.rol!=='dentista')return err('Solo el administrador puede añadir dispositivos',403);
-  const userId=u?.id||uuid();const options=await generateRegistrationOptions({rpName:'Dentista Viajero Clínica',rpID:url.hostname,userName:u?.nombre||'Dentista Viajero',userID:new TextEncoder().encode(userId),attestationType:'none',authenticatorSelection:{residentKey:'preferred',userVerification:'required'},timeout:60000});
-  const id=await challenge(db,options.challenge,'register',userId);return json({options,challengeId:id});
- }
- if(p==='/api/auth/register/verify'&&m==='POST'){
-  const data=await body(req);const c=await consume(db,data.challengeId,'register');if(!c)return err('Solicitud caducada',403);
-  const count=await db.prepare('SELECT COUNT(*) n FROM app_users').first();const u=await user(req,db);
-  if(count.n===0){if(!env.BOOTSTRAP_SECRET||!data.secret||await hash(data.secret)!==await hash(env.BOOTSTRAP_SECRET))return err('Clave incorrecta',403);}
-  else if(!u||u.rol!=='dentista'||u.id!==c.user_id)return err('Sin autorización',403);
-  const verification=await verifyRegistrationResponse({response:data.credential,expectedChallenge:c.challenge,expectedOrigin:url.origin,expectedRPID:url.hostname,requireUserVerification:true});
-  if(!verification.verified||!verification.registrationInfo)return err('No se pudo verificar la huella',403);
-  const cred=verification.registrationInfo.credential;
-  if(count.n===0)await db.prepare('INSERT INTO app_users(id,nombre,rol) VALUES(?,?,?)').bind(c.user_id,'Dentista Viajero','dentista').run();
-  await db.prepare('INSERT INTO passkeys(id,user_id,public_key,counter,transports,device_type,backed_up) VALUES(?,?,?,?,?,?,?)').bind(cred.id,c.user_id,b64url(cred.publicKey),cred.counter,JSON.stringify(cred.transports||[]),verification.registrationInfo.credentialDeviceType||null,verification.registrationInfo.credentialBackedUp?1:0).run();
-  await audit(db,{id:c.user_id},'alta_passkey','passkeys',cred.id);return json({ok:true},200,{'set-cookie':await session(db,c.user_id)});
- }
- if(p==='/api/auth/login/options'&&m==='POST'){
-  const keys=await db.prepare('SELECT id,transports FROM passkeys LIMIT 30').all();
-  const options=await generateAuthenticationOptions({rpID:url.hostname,userVerification:'required',allowCredentials:keys.results.map(k=>({id:k.id,transports:JSON.parse(k.transports||'[]')}))});
-  return json({options,challengeId:await challenge(db,options.challenge,'login',null)});
- }
- if(p==='/api/auth/login/verify'&&m==='POST'){
-  const data=await body(req);const c=await consume(db,data.challengeId,'login');if(!c)return err('Solicitud caducada',403);
-  const key=await db.prepare('SELECT p.*,u.activo FROM passkeys p JOIN app_users u ON p.user_id=u.id WHERE p.id=?').bind(data.credential?.id||'').first();if(!key||!key.activo)return err('Dispositivo no autorizado',403);
-  const result=await verifyAuthenticationResponse({response:data.credential,expectedChallenge:c.challenge,expectedOrigin:url.origin,expectedRPID:url.hostname,credential:{id:key.id,publicKey:fromB64(key.public_key),counter:key.counter,transports:JSON.parse(key.transports||'[]')},requireUserVerification:true});
-  if(!result.verified)return err('Acceso no verificado',403);
-  await db.prepare('UPDATE passkeys SET counter=?,ultimo_uso=CURRENT_TIMESTAMP WHERE id=?').bind(result.authenticationInfo.newCounter,key.id).run();
-  await audit(db,{id:key.user_id},'inicio_sesion');return json({ok:true},200,{'set-cookie':await session(db,key.user_id)});
- }
- const u=await user(req,db);if(!u)return err('Inicia sesión',401);
- if(p==='/api/auth/logout'&&m==='POST'){const token=(req.headers.get('cookie')||'').match(/dv_session=([^;]+)/)?.[1];if(token)await db.prepare('DELETE FROM app_sessions WHERE token_hash=?').bind(await hash(token)).run();return json({ok:true},200,{'set-cookie':'dv_session=; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=0'});}
+ const u=await user(req,env);
+ if(!u)return err('Acceso restringido a los dos correos autorizados. Configura Cloudflare Access.',401);
+ if(p==='/api/me'&&m==='GET')return json({user:u});
+ if(p==='/api/auth/logout'&&m==='POST')return json({ok:true});
  if(p==='/api/backup'&&m==='GET'){
   const tables=['pacientes','consultas','historias_clinicas','odontograma_hallazgos','escuelas','tamizajes_escolares','pagos'];const out={formato:'dv-clinica-backup',version:1,creado_en:new Date().toISOString(),tablas:{}};
   for(const t of tables){const r=await db.prepare(`SELECT * FROM ${t} LIMIT 10000`).all();out.tablas[t]=r.results;if(r.results.length===10000)return err('Respaldo supera el límite de filas; requiere exportación por lotes',409);}
@@ -96,4 +79,4 @@ async function api(req,env){const db=env.DB;const url=new URL(req.url),p=url.pat
  }
  return err('Ruta no encontrada',404);
 }
-export default {async fetch(req,env){const url=new URL(req.url);try{if(url.pathname.startsWith('/api/')){const response=await api(req,env);const h=new Headers(response.headers);for(const [k,v] of Object.entries(secureHeaders))h.set(k,v);return new Response(response.body,{status:response.status,headers:h});}const r=await env.ASSETS.fetch(req);const h=new Headers(r.headers);for(const [k,v] of Object.entries(secureHeaders))h.set(k,v);h.set('cache-control','no-store');return new Response(r.body,{status:r.status,headers:h});}catch(e){console.error('Error interno:',e?.name||'Error');return err('No se pudo completar la operación',500);}}};
+export default {async fetch(req,env){const url=new URL(req.url);try{if(url.pathname.startsWith('/api/')){const response=await api(req,env);const h=new Headers(response.headers);for(const [k,v] of Object.entries(secureHeaders))h.set(k,v);return new Response(response.body,{status:response.status,headers:h});}if(!await user(req,env))return new Response('Acceso restringido. Configura Cloudflare Access para este Worker.',{status:401,headers:{'content-type':'text/plain; charset=utf-8'}});const r=await env.ASSETS.fetch(req);const h=new Headers(r.headers);for(const [k,v] of Object.entries(secureHeaders))h.set(k,v);h.set('cache-control','no-store');return new Response(r.body,{status:r.status,headers:h});}catch(e){console.error('Error interno:',e?.name||'Error');return err('No se pudo completar la operación',500);}}};

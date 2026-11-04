@@ -2,7 +2,22 @@
   "name": "dentista-viajero-clinica",
   "main": "src/index.js",
   "compatibility_date": "2026-09-01",
-  "compatibility_flags": ["nodejs_compat"],
-  "assets": {"directory": "./public", "binding": "ASSETS", "run_worker_first": ["/api/*"]},
-  "d1_databases": [{"binding": "DB", "database_name": "dv_clinica", "database_id": "411dfb92-7835-46fd-ba82-9c40b7216d7a", "migrations_dir": "migrations"}]
+  "compatibility_flags": [
+    "nodejs_compat"
+  ],
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS",
+    "run_worker_first": [
+      "/api/*"
+    ]
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "dv_clinica",
+      "database_id": "411dfb92-7835-46fd-ba82-9c40b7216d7a",
+      "migrations_dir": "migrations"
+    }
+  ]
 }

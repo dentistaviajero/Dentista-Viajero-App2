@@ -1,5 +1,4 @@
 # Dentista Viajero Clínica · versión 1.0.0
-# Publicación inicial v1.0.0.
 
 **Proyecto real para Cloudflare Workers + D1, no una maqueta visual.** Contiene código ejecutable para pacientes, historia clínica, consultas, odontograma táctil, escuelas, pagos, inicio de sesión con Passkeys y respaldos cifrados. La publicación por sí sola NO habilita su uso con pacientes reales. Primero deben completarse y documentarse las pruebas de seguridad, privacidad, respaldo, restauración y cumplimiento.
 
@@ -11,6 +10,7 @@
 - Tablas existentes: `pacientes`, `consultas`, `odontograma_hallazgos`, `historias_clinicas`.
 
 **No borres las cuatro tablas existentes.** La migración `0001_ampliacion.sql` añade tablas sin destruirlas.
+
 ## Lo que incluye
 
 - Autenticación WebAuthn / Passkeys del celular, validada en el servidor mediante `@simplewebauthn/server`.
