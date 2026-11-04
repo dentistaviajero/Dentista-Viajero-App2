@@ -13,14 +13,15 @@ jobs:
       - name: Descargar repositorio
         uses: actions/checkout@v4
 
-            - name: Extraer aplicacion
+      - name: Extraer aplicacion
         run: |
           unzip -o dentista-viajero-clinica-v1.0.1-simplificada.zip -d /tmp/clinica
           cp -R /tmp/clinica/. .
+
       - name: Guardar archivos
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add .
-          git commit -m "Instalar Dentista Viajero Clinica v1.0.0" || exit 0
+          git commit -m "Instalar Dentista Viajero Clinica v1.0.1" || exit 0
           git push
