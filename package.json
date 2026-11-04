@@ -1,0 +1,14 @@
+{
+  "name": "dentista-viajero-clinica",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "db:migrate": "wrangler d1 migrations apply dv_clinica --remote",
+    "check": "node --check src/index.js && node --check public/app.js"
+  },
+  "dependencies": {"@simplewebauthn/server": "^13.2.2"},
+  "devDependencies": {"wrangler": "^4.0.0"}
+}
