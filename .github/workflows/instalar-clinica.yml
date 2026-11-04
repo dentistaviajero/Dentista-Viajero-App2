@@ -15,9 +15,8 @@ jobs:
 
       - name: Extraer aplicacion
         run: |
-          unzip -o dentista-viajero-clinica-v1.0.0-cloudflare.zip -d /tmp/clinica
-          cp -R /tmp/clinica/dv-clinica-release/. .
-
+          unzip -o dentista-viajero-clinica-v1.0.1-simplificada.zip -d /tmp/clinica
+cp         -R /tmp/clinica/. .
       - name: Guardar archivos
         run: |
           git config user.name "github-actions[bot]"
