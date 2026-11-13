@@ -1,82 +1,53 @@
-import { createRemoteJWKSet, jwtVerify } from 'jose';
-
-const json=(data,status=200,extra={})=>new Response(JSON.stringify(data),{status,headers:{'content-type':'application/json; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff',...extra}});
-const err=(msg,status=400)=>json({error:msg},status);
-const uuid=()=>crypto.randomUUID();
-const b64url=bytes=>btoa(String.fromCharCode(...bytes)).replace(/\+/g,'-').replace(/\//g,'_').replace(/=/g,'');
-const fromB64=s=>Uint8Array.from(atob(s.replace(/-/g,'+').replace(/_/g,'/')+'='.repeat((4-s.length%4)%4)),c=>c.charCodeAt(0));
-const hash=async s=>b64url(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(s))));
-const randomToken=()=>b64url(crypto.getRandomValues(new Uint8Array(32)));
-const secureHeaders={'x-frame-options':'DENY','referrer-policy':'no-referrer','permissions-policy':'camera=(), microphone=(), geolocation=()','content-security-policy':"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"};
-async function body(req){const s=await req.text();if(s.length>1024*1024)throw Error('Solicitud demasiado grande');return s?JSON.parse(s):{};}
-const ALLOWED_EMAILS=new Set(['dentistaviajero@gmail.com','parteraviajera@gmail.com']);
-let accessKeySet=null,accessKeyUrl='';
-async function user(req,env){
- const domain=String(env.ACCESS_TEAM_DOMAIN||'').replace(/^https?:\/\//,'').replace(/\/$/,'');
- const aud=String(env.ACCESS_AUD||'');
- if(!domain||!aud)return null;
- const token=req.headers.get('Cf-Access-Jwt-Assertion');
- if(!token)return null;
- const keyUrl=`https://${domain}/cdn-cgi/access/certs`;
- if(!accessKeySet||accessKeyUrl!==keyUrl){accessKeySet=createRemoteJWKSet(new URL(keyUrl));accessKeyUrl=keyUrl;}
- try{
-  const {payload}=await jwtVerify(token,accessKeySet,{issuer:`https://${domain}`,audience:aud,algorithms:['RS256']});
-  const email=String(payload.email||'').trim().toLowerCase();
-  if(!ALLOWED_EMAILS.has(email))return null;
-  return {id:email,nombre:email==='dentistaviajero@gmail.com'?'Dentista Viajero':'Partera Viajera',rol:'dentista',email};
- }catch{return null;}
+const J=(v,s=200)=>new Response(JSON.stringify(v),{status:s,headers:{'content-type':'application/json; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff'}});
+const E=(msg,s=400)=>J({error:msg},s), uid=()=>crypto.randomUUID();
+const enc=new TextEncoder();
+const hex=b=>[...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,'0')).join('');
+const digest=async x=>hex(await crypto.subtle.digest('SHA-256',enc.encode(x)));
+async function sig(secret,msg){const key=await crypto.subtle.importKey('raw',enc.encode(secret),{name:'HMAC',hash:'SHA-256'},false,['sign']);return hex(await crypto.subtle.sign('HMAC',key,enc.encode(msg)))}
+function eq(a,b){if(typeof a!=='string'||typeof b!=='string')return false;let diff=a.length^b.length;for(let i=0;i<Math.max(a.length,b.length);i++)diff|=(a.charCodeAt(i)||0)^(b.charCodeAt(i)||0);return diff===0}
+async function valid(req,env){const secret=env.ADMIN_TOKEN;if(!secret||secret.length<16)return false;const c=(req.headers.get('cookie')||'').split(';').map(x=>x.trim()).find(x=>x.startsWith('dv_session='));if(!c)return false;const parts=c.slice(11).split('.');if(parts.length!==2)return false;const [until,signature]=parts;if(!/^\d{13}$/.test(until)||Number(until)<Date.now())return false;return eq(signature,await sig(secret,until))}
+async function read(req){const s=await req.text();if(s.length>180000)return null;try{return s?JSON.parse(s):{}}catch{return null}}
+function origin(req){const o=req.headers.get('origin');return !o||o===new URL(req.url).origin}
+const allow={patients:['nombre','fecha_nacimiento','tutor_nombre','tutor_parentesco','telefono','correo','ciudad','colonia','medico','origen','origen_otro','escuela_campana','estado','archivado'],schools:['nombre','clave','localidad']};
+const fields=(d,keys)=>Object.fromEntries(keys.filter(k=>Object.hasOwn(d,k)).map(k=>[k,d[k]]));
+const str=v=>typeof v==='string'&&v.length<=10000;
+const safe=d=>Object.values(d).every(v=>v===null||str(v)||typeof v==='number');
+async function audit(db,entity,id,action){await db.prepare('INSERT INTO dv2_audit(id,entity,entity_id,action) VALUES(?,?,?,?)').bind(uid(),entity,id,action).run()}
+const tables=['dv2_patients','dv2_histories','dv2_marks','dv2_tooth_notes','dv2_visits','dv2_quotes','dv2_payments','dv2_schools'];
+async function api(req,env){const db=env.DB;if(!db)return E('Falta enlace DB',503);const u=new URL(req.url),p=u.pathname,m=req.method;
+ if(m!=='GET'&&!origin(req))return E('Origen no permitido',403);
+ if(p==='/api/login'&&m==='POST'){
+  const d=await read(req);if(!d||!str(d.token))return E('Contraseña inválida',401);
+  if(!env.ADMIN_TOKEN||env.ADMIN_TOKEN.length<16)return E('Configura ADMIN_TOKEN (mínimo 16 caracteres)',503);
+  const a=await digest(d.token),b=await digest(env.ADMIN_TOKEN);if(!eq(a,b))return E('Contraseña incorrecta',401);
+  const until=String(Date.now()+8*60*60*1000);const signature=await sig(env.ADMIN_TOKEN,until);
+  return new Response(JSON.stringify({ok:true}),{headers:{'content-type':'application/json','cache-control':'no-store','set-cookie':`dv_session=${until}.${signature}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=28800`}})
+ }
+ if(p==='/api/logout'&&m==='POST')return new Response('{"ok":true}',{headers:{'content-type':'application/json','set-cookie':'dv_session=; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=0'}});
+ if(!await valid(req,env))return E('Sesión no autorizada',401);
+ if(p==='/api/me')return J({ok:true});
+ if(p==='/api/patients'&&m==='GET')return J((await db.prepare('SELECT * FROM dv2_patients ORDER BY folio DESC LIMIT 1500').all()).results);
+ if(p==='/api/patients'&&m==='POST'){
+  const d=await read(req);if(!d||!str(d.nombre)||!d.nombre.trim())return E('Nombre obligatorio');const x=fields(d,allow.patients);if(!safe(x))return E('Datos inválidos');const id=uid();
+  const result=await db.batch([db.prepare("UPDATE dv2_counter SET value=value+1 WHERE name='patient'"),db.prepare(`INSERT INTO dv2_patients(id,folio,${Object.keys(x).join(',')}) VALUES(?,(SELECT value FROM dv2_counter WHERE name='patient'),${Object.keys(x).map(()=>'?').join(',')})`).bind(id,...Object.values(x))]);await audit(db,'patient',id,'create');return J({id},201)
+ }
+ const patient=p.match(/^\/api\/patients\/([a-f0-9-]+)$/);if(patient){const id=patient[1];if(m==='PATCH'){const d=await read(req),x=d&&fields(d,allow.patients);if(!x||!safe(x)||!Object.keys(x).length)return E('Datos inválidos');await db.prepare(`UPDATE dv2_patients SET ${Object.keys(x).map(k=>k+'=?').join(',')},updated_at=CURRENT_TIMESTAMP WHERE id=?`).bind(...Object.values(x),id).run();await audit(db,'patient',id,'update');return J({ok:true})}if(m==='GET')return J(await db.prepare('SELECT * FROM dv2_patients WHERE id=?').bind(id).first())}
+ if(p==='/api/history'&&m==='GET'){const id=u.searchParams.get('patient');return J(JSON.parse((await db.prepare('SELECT data FROM dv2_histories WHERE patient_id=?').bind(id).first())?.data||'{}'))}
+ if(p==='/api/history'&&m==='PUT'){const d=await read(req);if(!d||!str(d.patient)||!d.data||typeof d.data!=='object'||JSON.stringify(d.data).length>80000)return E('Historia inválida');await db.prepare('INSERT INTO dv2_histories(patient_id,data) VALUES(?,?) ON CONFLICT(patient_id) DO UPDATE SET data=excluded.data,updated_at=CURRENT_TIMESTAMP').bind(d.patient,JSON.stringify(d.data)).run();await audit(db,'history',d.patient,'update');return J({ok:true})}
+ if(p==='/api/marks'&&m==='GET'){const id=u.searchParams.get('patient');return J({marks:(await db.prepare('SELECT * FROM dv2_marks WHERE patient_id=? ORDER BY created_at').bind(id).all()).results,notes:(await db.prepare('SELECT * FROM dv2_tooth_notes WHERE patient_id=?').bind(id).all()).results})}
+ if(p==='/api/marks'&&m==='POST'){const d=await read(req);if(!d||!/^([1-4][1-8]|[5-8][1-5])$/.test(d.tooth)||!['V','M','D','L','O'].includes(d.surface)||!['caries','restauracion','blanca','sarro'].includes(d.code))return E('Marca inválida');await db.batch([db.prepare('DELETE FROM dv2_marks WHERE patient_id=? AND tooth=? AND surface=?').bind(d.patient,d.tooth,d.surface),db.prepare('INSERT INTO dv2_marks(id,patient_id,tooth,surface,code) VALUES(?,?,?,?,?)').bind(uid(),d.patient,d.tooth,d.surface,d.code)]);await audit(db,'mark',d.patient,'add');return J({ok:true})}
+ const mark=p.match(/^\/api\/marks\/([a-f0-9-]+)$/);if(mark&&m==='DELETE'){await db.prepare('DELETE FROM dv2_marks WHERE id=?').bind(mark[1]).run();await audit(db,'mark',mark[1],'remove');return J({ok:true})}
+ if(p==='/api/tooth-note'&&m==='PUT'){const d=await read(req);if(!d||!str(d.patient)||!/^([1-4][1-8]|[5-8][1-5])$/.test(d.tooth)||!Array.isArray(d.symbols)||!d.symbols.every(x=>['X','RR','MS','HM','M','✓'].includes(x))||!str(d.notes))return E('Anotación inválida');await db.prepare('INSERT INTO dv2_tooth_notes(patient_id,tooth,symbols,notes) VALUES(?,?,?,?) ON CONFLICT(patient_id,tooth) DO UPDATE SET symbols=excluded.symbols,notes=excluded.notes').bind(d.patient,d.tooth,JSON.stringify(d.symbols),d.notes).run();await audit(db,'tooth',d.patient,'update');return J({ok:true})}
+ if(p==='/api/visits'&&m==='GET')return J((await db.prepare('SELECT * FROM dv2_visits WHERE patient_id=? ORDER BY created_at DESC').bind(u.searchParams.get('patient')).all()).results);
+ if(p==='/api/visits'&&m==='POST'){const d=await read(req);if(!d||!str(d.patient)||!d.data||JSON.stringify(d.data).length>30000)return E('Nota inválida');const id=uid();await db.prepare('INSERT INTO dv2_visits(id,patient_id,data) VALUES(?,?,?)').bind(id,d.patient,JSON.stringify(d.data)).run();await audit(db,'visit',id,'create');return J({id},201)}
+ if(p==='/api/quotes'&&m==='GET')return J((await db.prepare('SELECT * FROM dv2_quotes WHERE patient_id=? ORDER BY created_at').bind(u.searchParams.get('patient')).all()).results);
+ if(p==='/api/quotes'&&m==='POST'){const d=await read(req);if(!d||!str(d.patient)||!str(d.procedure)||!d.procedure.trim()||!Number.isSafeInteger(d.amount_cents)||d.amount_cents<0)return E('Cotización inválida');const id=uid();await db.prepare('INSERT INTO dv2_quotes(id,patient_id,tooth,procedure,amount_cents,status,source) VALUES(?,?,?,?,?,?,?)').bind(id,d.patient,d.tooth||null,d.procedure,d.amount_cents,'pendiente',d.source||'manual').run();await audit(db,'quote',id,'create');return J({id},201)}
+ const quote=p.match(/^\/api\/quotes\/([a-f0-9-]+)$/);if(quote&&m==='PATCH'){const d=await read(req);if(!d||!['pendiente','en_proceso','terminado','cancelado'].includes(d.status))return E('Estado inválido');await db.prepare('UPDATE dv2_quotes SET status=?,updated_at=CURRENT_TIMESTAMP WHERE id=?').bind(d.status,quote[1]).run();await audit(db,'quote',quote[1],'status');return J({ok:true})}
+ if(p==='/api/payments'&&m==='GET')return J((await db.prepare('SELECT * FROM dv2_payments WHERE patient_id=? ORDER BY created_at DESC').bind(u.searchParams.get('patient')).all()).results);
+ if(p==='/api/payments'&&m==='POST'){const d=await read(req);if(!d||!str(d.patient)||!Number.isSafeInteger(d.amount_cents)||d.amount_cents<=0||!str(d.concept||''))return E('Pago inválido');const id=uid();await db.prepare('INSERT INTO dv2_payments(id,patient_id,amount_cents,concept) VALUES(?,?,?,?)').bind(id,d.patient,d.amount_cents,d.concept||'Abono').run();await audit(db,'payment',id,'create');return J({id},201)}
+ if(p==='/api/schools'&&m==='GET')return J((await db.prepare('SELECT * FROM dv2_schools ORDER BY nombre').all()).results);
+ if(p==='/api/schools'&&m==='POST'){const d=await read(req);if(!d||!str(d.nombre)||!d.nombre.trim())return E('Nombre obligatorio');const id=uid(),x=fields(d,allow.schools);if(!safe(x))return E('Datos inválidos');await db.prepare('INSERT INTO dv2_schools(id,nombre,clave,localidad) VALUES(?,?,?,?)').bind(id,x.nombre,x.clave||'',x.localidad||'').run();return J({id},201)}
+ if(p==='/api/backup'&&m==='GET'){const data={formato:'dv-clinica-v2',version:2,fecha:new Date().toISOString(),tablas:{}};for(const t of tables)data.tablas[t]=(await db.prepare(`SELECT * FROM ${t} LIMIT 10000`).all()).results;return J(data)}
+ return E('Ruta desconocida',404)
 }
-async function audit(db,u,action,entity,id){return; /* La bitácora se habilita con las migraciones */}
-function sameOrigin(req){const origin=req.headers.get('origin');return origin===new URL(req.url).origin;}
-async function throttle(req,db){const ip=req.headers.get('cf-connecting-ip')||'unknown';const key=await hash(ip);const now=Date.now();const row=await db.prepare('SELECT attempts,window_start FROM auth_attempts WHERE actor_hash=?').bind(key).first();if(row&&now-row.window_start<900000&&row.attempts>=12)return false;if(!row||now-row.window_start>=900000)await db.prepare('INSERT INTO auth_attempts(actor_hash,attempts,window_start) VALUES(?,1,?) ON CONFLICT(actor_hash) DO UPDATE SET attempts=1,window_start=excluded.window_start').bind(key,now).run();else await db.prepare('UPDATE auth_attempts SET attempts=attempts+1 WHERE actor_hash=?').bind(key).run();return true;}
-async function challenge(db,value,type,userId){const id=uuid();await db.prepare('INSERT INTO auth_challenges(id,challenge,tipo,user_id,expira_en) VALUES(?,?,?,?,?)').bind(id,value,type,userId||null,Date.now()+300000).run();return id;}
-async function consume(db,id,type){const row=await db.prepare('SELECT * FROM auth_challenges WHERE id=? AND tipo=? AND expira_en>?').bind(id,type,Date.now()).first();if(row)await db.prepare('DELETE FROM auth_challenges WHERE id=?').bind(id).run();return row;}
-const specs={
- pacientes:{fields:['folio','nombre','fecha_nacimiento','telefono','correo','tutor_nombre','tutor_parentesco','ciudad','colonia'],required:['folio','nombre'],patient:false},
- consultas:{fields:['paciente_id','fecha','motivo','exploracion','diagnostico','tratamiento','observaciones','proxima_revision'],required:['paciente_id'],patient:true},
- historias_clinicas:{fields:['paciente_id','alergias','enfermedades','medicamentos','antecedentes_importantes','reaccion_anestesia','contacto_emergencia','telefono_emergencia','patologias','habitos_orales','habitos_generales','higiene_oral','observaciones'],required:['paciente_id'],patient:true},
- odontograma_hallazgos:{fields:['paciente_id','consulta_id','diente','superficie','codigo','observaciones','activo'],required:['paciente_id','diente','superficie','codigo'],patient:true},
- escuelas:{fields:['nombre','clave','localidad'],required:['nombre']},
- tamizajes_escolares:{fields:['escuela_id','paciente_id','fecha','grado','grupo','caries','respiracion_bucal','bruxismo','observaciones'],required:['escuela_id']},
- pagos:{fields:['paciente_id','consulta_id','concepto','monto_centavos','fecha','notas'],required:['paciente_id','concepto','monto_centavos'],patient:true}
-};
-function checkData(data,spec){const out={};for(const k of spec.fields){if(data[k]!==undefined){const v=data[k];if(v!==null&&typeof v!=='string'&&typeof v!=='number')throw Error(`Campo inválido: ${k}`);if(typeof v==='string'&&v.length>12000)throw Error(`Campo demasiado largo: ${k}`);out[k]=v;}}for(const k of spec.required){if(out[k]===undefined||out[k]===null||out[k]==='')throw Error(`Falta ${k}`);}return out;}
-async function api(req,env){const db=env.DB;const url=new URL(req.url),p=url.pathname,m=req.method;
- if(!db)return err('Falta el enlace DB',503);
- if(m!=='GET'&&!sameOrigin(req))return err('Origen no autorizado',403);
- const u=await user(req,env);
- if(!u)return err('Acceso restringido a los dos correos autorizados. Configura Cloudflare Access.',401);
- if(p==='/api/me'&&m==='GET')return json({user:u});
- if(p==='/api/auth/logout'&&m==='POST')return json({ok:true});
- if(p==='/api/backup'&&m==='GET'){
-  const tables=['pacientes','consultas','historias_clinicas','odontograma_hallazgos','escuelas','tamizajes_escolares','pagos'];const out={formato:'dv-clinica-backup',version:1,creado_en:new Date().toISOString(),tablas:{}};
-  for(const t of tables){const r=await db.prepare(`SELECT * FROM ${t} LIMIT 10000`).all();out.tablas[t]=r.results;if(r.results.length===10000)return err('Respaldo supera el límite de filas; requiere exportación por lotes',409);}
-  await audit(db,u,'exportar_respaldo');return json(out,200,{'content-disposition':`attachment; filename="dv-clinica-${new Date().toISOString().slice(0,10)}.json"`});
- }
- if(p==='/api/backup/import'&&m==='POST'){
-  const data=await body(req);if(data.formato!=='dv-clinica-backup'||data.version!==1||!data.tablas)return err('Formato de respaldo inválido');
-  const names=['pacientes','consultas','historias_clinicas','odontograma_hallazgos','escuelas','tamizajes_escolares','pagos'];
-  const existing=await db.prepare('SELECT COUNT(*) n FROM pacientes').first();if(existing.n>0)return err('Por seguridad, la restauración solo se permite en una base sin pacientes. Solicita una restauración asistida.',409);
-  const stmts=[];let count=0;
-  for(const t of names){const rows=data.tablas[t]||[];if(!Array.isArray(rows)||rows.length>2000)return err('Cantidad de registros inválida');for(const r of rows){if(!r||typeof r!=='object'||!r.id||typeof r.id!=='string')return err('Registro inválido');const cols=['id',...specs[t].fields.filter(k=>r[k]!==undefined)];if(t==='odontograma_hallazgos')for(const k of ['creado_en','actualizado_en'])if(r[k]!==undefined)cols.push(k);if(t==='pacientes')for(const k of ['fecha_registro','actualizado_en'])if(r[k]!==undefined)cols.push(k);if(t==='historias_clinicas'&&r.actualizado_en!==undefined)cols.push('actualizado_en');if(t==='escuelas'&&r.creado_en!==undefined)cols.push('creado_en');if(t==='pagos'&&r.fecha!==undefined&&!cols.includes('fecha'))cols.push('fecha');
-    stmts.push(db.prepare(`INSERT INTO ${t} (${cols.join(',')}) VALUES (${cols.map(()=>'?').join(',')})`).bind(...cols.map(k=>r[k])));count++;}}
-  if(count>5000)return err('Respaldo demasiado grande para esta operación');if(stmts.length)await db.batch(stmts);await audit(db,u,'restaurar_respaldo');return json({ok:true,registros:count});
- }
- if(p==='/api/export/csv'&&m==='GET'){
-  const table=url.searchParams.get('tabla');if(!['pacientes','escuelas','tamizajes_escolares','pagos'].includes(table))return err('Tabla no permitida');const rows=(await db.prepare(`SELECT * FROM ${table} LIMIT 5000`).all()).results;const keys=rows.length?Object.keys(rows[0]):specs[table].fields;const cell=v=>'"'+String(v??'').replace(/^[=+@\-]/,m=>"'"+m).replace(/"/g,'""')+'"';const csv='\uFEFF'+[keys.join(','),...rows.map(r=>keys.map(k=>cell(r[k])).join(','))].join('\r\n');await audit(db,u,'exportar_csv',table);return new Response(csv,{headers:{'content-type':'text/csv; charset=utf-8','content-disposition':`attachment; filename="${table}.csv"`,'cache-control':'no-store'}});
- }
- const match=p.match(/^\/api\/(pacientes|consultas|historias_clinicas|odontograma_hallazgos|escuelas|tamizajes_escolares|pagos)(?:\/([a-zA-Z0-9-]+))?$/);
- if(match){const table=match[1],id=match[2],spec=specs[table];
-  if(m==='GET'){
-   if(id){const row=await db.prepare(`SELECT * FROM ${table} WHERE id=?`).bind(id).first();return row?json(row):err('No encontrado',404);}
-   const patient=url.searchParams.get('paciente_id'),school=url.searchParams.get('escuela_id');let sql=`SELECT * FROM ${table}`,param=[];
-   if(patient&&spec.fields.includes('paciente_id')){sql+=' WHERE paciente_id=?';param=[patient];}else if(school&&spec.fields.includes('escuela_id')){sql+=' WHERE escuela_id=?';param=[school];}
-   sql+=' ORDER BY rowid DESC LIMIT 300';const rows=await db.prepare(sql).bind(...param).all();return json(rows.results);
-  }
-  if(m==='POST'&&!id){const data=checkData(await body(req),spec);const newId=uuid(),cols=['id',...Object.keys(data)];await db.prepare(`INSERT INTO ${table} (${cols.join(',')}) VALUES (${cols.map(()=>'?').join(',')})`).bind(newId,...Object.values(data)).run();await audit(db,u,'crear',table,newId);return json({id:newId},201);}
-  if(m==='PATCH'&&id){const raw=await body(req);const data={};for(const k of spec.fields){if(raw[k]!==undefined){if(raw[k]!==null&&typeof raw[k]!=='string'&&typeof raw[k]!=='number')return err('Dato inválido');data[k]=raw[k];}}if(!Object.keys(data).length)return err('Sin cambios');await db.prepare(`UPDATE ${table} SET ${Object.keys(data).map(k=>`${k}=?`).join(',')} WHERE id=?`).bind(...Object.values(data),id).run();await audit(db,u,'editar',table,id);return json({ok:true});}
-  if(m==='DELETE'&&id&&table==='odontograma_hallazgos'){await db.prepare('UPDATE odontograma_hallazgos SET activo=0,actualizado_en=CURRENT_TIMESTAMP WHERE id=?').bind(id).run();await audit(db,u,'desactivar',table,id);return json({ok:true});}
- }
- return err('Ruta no encontrada',404);
-}
-export default {async fetch(req,env){const url=new URL(req.url);try{if(url.pathname.startsWith('/api/')){const response=await api(req,env);const h=new Headers(response.headers);for(const [k,v] of Object.entries(secureHeaders))h.set(k,v);return new Response(response.body,{status:response.status,headers:h});}if(!await user(req,env))return new Response('Acceso restringido. Configura Cloudflare Access para este Worker.',{status:401,headers:{'content-type':'text/plain; charset=utf-8'}});const r=await env.ASSETS.fetch(req);const h=new Headers(r.headers);for(const [k,v] of Object.entries(secureHeaders))h.set(k,v);h.set('cache-control','no-store');return new Response(r.body,{status:r.status,headers:h});}catch(e){console.error('Error interno:',e?.name||'Error');return err('No se pudo completar la operación',500);}}};
+export default {async fetch(req,env){try{const u=new URL(req.url);if(u.pathname.startsWith('/api/'))return await api(req,env);const r=await env.ASSETS.fetch(req);const h=new Headers(r.headers);h.set('x-content-type-options','nosniff');h.set('x-frame-options','DENY');h.set('cache-control','no-store');h.set('content-security-policy',"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; object-src 'none'; frame-ancestors 'none'");return new Response(r.body,{status:r.status,headers:h})}catch(e){console.error(e);return E('Error interno. Revisa los registros del Worker.',500)}}};

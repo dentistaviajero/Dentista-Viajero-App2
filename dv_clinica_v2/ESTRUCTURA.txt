@@ -1,0 +1,15 @@
+RAÍZ DEL REPOSITORIO:
+package.json
+wrangler.jsonc
+LEEME-INSTALAR.txt
+ESPECIFICACIONES.md
+ESTRUCTURA.txt
+src/index.js
+public/index.html
+public/app.js
+public/styles.css
+public/manifest.webmanifest
+migrations/0002_clinica_v2.sql
+.github/workflows/desplegar-clinica.yml
+
+No colocar src/index.js ni public/app.js directamente en la raíz.

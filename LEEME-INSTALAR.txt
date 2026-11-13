@@ -1,10 +1,21 @@
-DENTISTA VIAJERO CLÍNICA - ACCESO DIRECTO
-1. Subir este ZIP a la raíz de dentistaviajero/Dentista-Viajero-App2
-2. Editar .github/workflows/instalar-clinica.yml usando el instalador existente:
-   unzip -o dentista-viajero-clinica-acceso-directo.zip -d /tmp/clinica
-   cp -R /tmp/clinica/. .
-3. Ejecutar Actions > Instalar Dentista Viajero Clinica > Run workflow.
-4. Esperar el despliegue en Cloudflare. Mantener DB y base D1 existentes.
-NO requiere nuevas migraciones. No introducir datos clínicos reales: esta variante
-NO restringe el acceso a la URL y permite leer y modificar todos los expedientes
-desde internet. Es apta para pruebas con datos ficticios, no para uso clínico real.
+DENTISTA VIAJERO CLÍNICA V2 — INSTALACIÓN DESDE ANDROID
+
+IMPORTANTE: Este ZIP contiene una nueva versión funcional inicial, no un sistema clínico auditado. NO introducir datos reales hasta verificar acceso, persistencia, respaldos y obligaciones de privacidad. Conserva la base D1 existente. La portada incluye los nombres de los personajes pero no sus imágenes oficiales; falta integrar los archivos gráficos originales.
+
+1. Descarga el ZIP y descomprímelo con la app Archivos de Android. Al abrir la carpeta descomprimida verás package.json, wrangler.jsonc, src, public, migrations y .github. NO subas el ZIP como si GitHub fuera a descomprimirlo automáticamente: GitHub no lo hace.
+2. Repositorio recomendado: https://github.com/dentistaviajero/Dentista-Viajero-App2 (rama main). NO es necesario crear otro. Haz una copia de seguridad de los archivos actuales antes de reemplazarlos.
+3. En GitHub, sube cada archivo en su ruta exacta (no todos a la raíz). La estructura aparece en ESTRUCTURA.txt. En Android usa Chrome > menú ⋮ > Sitio para computadora para acceder a Add file > Upload files. Entra a la carpeta destino en GitHub antes de subir los archivos correspondientes. Si GitHub no permite crear una carpeta desde móvil, utiliza Add file > Create new file y escribe una ruta como src/index.js, luego pega el contenido del archivo (alternativa: github.dev en navegador).
+4. Para .github/workflows/desplegar-clinica.yml, GitHub puede requerir permisos de workflow. En GitHub Actions debería aparecer "Desplegar Clinica". Si ya existe otro workflow que despliega el mismo Worker, desactívalo para evitar despliegues concurrentes.
+5. En GitHub > Settings > Secrets and variables > Actions deben existir los secretos CLOUDFLARE_API_TOKEN y CLOUDFLARE_ACCOUNT_ID. El token necesita permisos de editar Workers y D1; si ya funcionaban, reutilízalos. NUNCA los pongas en archivos del repositorio.
+6. En Cloudflare > Workers & Pages > dentista-viajero-clinica > Settings > Variables and Secrets agrega un secreto ADMIN_TOKEN con una contraseña larga (mínimo 16 caracteres). No la compartas ni la subas a GitHub. El Worker usa esa contraseña para emitir una sesión de 8 horas.
+7. GitHub > Actions > Desplegar Clinica > Run workflow. Primero aplica la migración 0002_clinica_v2.sql, luego publica el Worker. Si el despliegue falla, revisa el paso rojo. No borres la D1.
+8. Abre https://dentista-viajero-clinica.dentistaviajero.workers.dev/ y comprueba la pantalla de contraseña. Crea SOLO un paciente ficticio; revisa folio, historia, odontograma, cotización, pago, salida y nuevo acceso. Verifica que siga guardado. Descarga un respaldo de prueba y comprueba su contenido.
+9. En caso de error de tablas dv2_, confirma que la migración remota se ejecutó en Actions. Si ves la interfaz vieja, revisa que public/app.js y src/index.js estén en sus carpetas, que el workflow termine verde y recarga la página.
+
+NOTAS:
+- Los datos v1 existentes no se borran ni migran a v2. Se guardan en tablas nuevas dv2_*; una migración de datos anterior requerirá revisión posterior.
+- El archivo JSON exportado no está cifrado; no usarlo para respaldar pacientes reales sin protección adicional.
+- El botón Archivar conserva los expedientes. No se incluye eliminación definitiva.
+- Los hallazgos del odontograma NO crean cargos automáticos; usa "Agregar tratamiento a cotización" para validar procedimiento e importe.
+- La versión incluye formatos imprimibles preliminares, no receta o consentimiento legalmente finalizados.
+- Esta versión no incorpora la fotografía oficial de Pippo/Peluche/Rumi porque no se incluyeron los archivos originales en este paquete.
