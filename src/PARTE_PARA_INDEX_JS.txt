@@ -1,0 +1,26 @@
+ARCHIVO A MODIFICAR: src/index.js (servidor Worker, NO public/index.html)
+
+Busca la línea:
+ const patient=p.match(/^\/api\/patients\/([a-f0-9-]+)$/);if(patient){const id=patient[1];if(m==='PATCH'){
+
+Inserta JUSTO ANTES de esa línea el siguiente bloque:
+
+ const patientDelete=p.match(/^\/api\/patients\/([a-f0-9-]+)$/);
+ if(patientDelete&&m==='DELETE'){
+  const id=patientDelete[1];
+  const exists=await db.prepare('SELECT id FROM dv2_patients WHERE id=?').bind(id).first();
+  if(!exists)return E('Paciente no encontrado',404);
+  await db.batch([
+   db.prepare('DELETE FROM dv2_marks WHERE patient_id=?').bind(id),
+   db.prepare('DELETE FROM dv2_tooth_notes WHERE patient_id=?').bind(id),
+   db.prepare('DELETE FROM dv2_visits WHERE patient_id=?').bind(id),
+   db.prepare('DELETE FROM dv2_quotes WHERE patient_id=?').bind(id),
+   db.prepare('DELETE FROM dv2_payments WHERE patient_id=?').bind(id),
+   db.prepare('DELETE FROM dv2_histories WHERE patient_id=?').bind(id),
+   db.prepare('DELETE FROM dv2_patients WHERE id=?').bind(id)
+  ]);
+  await audit(db,'patient',id,'delete');
+  return J({ok:true});
+ }
+
+ATENCIÓN: esta operación es irreversible. Haz un respaldo JSON antes de utilizarla. Verifica en un expediente de prueba.
