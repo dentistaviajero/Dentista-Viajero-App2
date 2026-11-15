@@ -29,10 +29,25 @@ async function api(req,env){const db=env.DB;if(!db)return E('Falta enlace DB',50
  if(p==='/api/patients'&&m==='GET')return J((await db.prepare('SELECT * FROM dv2_patients ORDER BY folio DESC LIMIT 1500').all()).results);
  if(p==='/api/patients'&&m==='POST'){
   const d=await read(req);if(!d||!str(d.nombre)||!d.nombre.trim())return E('Nombre obligatorio');const x=fields(d,allow.patients);if(!safe(x))return E('Datos inválidos');const id=uid();
-  const result=await db.batch([db.prepare("UPDATE dv2_counter SET value=value+1 WHERE name='patient'"),db.prepare(`INSERT INTO dv2_patients(id,folio,${Object.keys(x).join(',')}) VALUES(?,(SELECT value FROM dv2_counter WHERE name='patient'),${Object.keys(x).map(()=>'?').join(',')})`).bind(id,...Object.values(x))]);await audit(db,'patient',id,'create');return J({id},201)
- }
+  const result=await db.batch([db.prepare("UPDATE dv2_counter SET value=value+1 WHERE name='patient'"),db.prepare(`INSERT INTO dv2_patients(id,folio,${Object.keys(x).join(',')}) VALUES(?,(SELECT value FROM dv2_counter WHERE name='patient'),${Object.keys(x).map(()=>'?').join(',')})`).bind(id,...Object.values(x))]);await audit(db,'patient',id,'create');return J({id},201) }
  const patient=p.match(/^\/api\/patients\/([a-f0-9-]+)$/);if(patient){const id=patient[1];if(m==='PATCH'){const d=await read(req),x=d&&fields(d,allow.patients);if(!x||!safe(x)||!Object.keys(x).length)return E('Datos inválidos');await db.prepare(`UPDATE dv2_patients SET ${Object.keys(x).map(k=>k+'=?').join(',')},updated_at=CURRENT_TIMESTAMP WHERE id=?`).bind(...Object.values(x),id).run();await audit(db,'patient',id,'update');return J({ok:true})}if(m==='GET')return J(await db.prepare('SELECT * FROM dv2_patients WHERE id=?').bind(id).first())}
- if(p==='/api/history'&&m==='GET'){const id=u.searchParams.get('patient');return J(JSON.parse((await db.prepare('SELECT data FROM dv2_histories WHERE patient_id=?').bind(id).first())?.data||'{}'))}
+ const patientDelete=p.match(/^\/api\/patients\/([a-f0-9-]+)$/);
+ if(patientDelete&&m==='DELETE'){
+  const id=patientDelete[1];
+  const exists=await db.prepare('SELECT id FROM dv2_patients WHERE id=?').bind(id).first();
+  if(!exists)return E('Paciente no encontrado',404);
+  await db.batch([
+   db.prepare('DELETE FROM dv2_marks WHERE patient_id=?').bind(id),
+   db.prepare('DELETE FROM dv2_tooth_notes WHERE patient_id=?').bind(id),
+   db.prepare('DELETE FROM dv2_visits WHERE patient_id=?').bind(id),
+   db.prepare('DELETE FROM dv2_quotes WHERE patient_id=?').bind(id),
+   db.prepare('DELETE FROM dv2_payments WHERE patient_id=?').bind(id),
+   db.prepare('DELETE FROM dv2_histories WHERE patient_id=?').bind(id),
+   db.prepare('DELETE FROM dv2_patients WHERE id=?').bind(id)
+  ]);
+  await audit(db,'patient',id,'delete');
+  return J({ok:true});
+ }if(p==='/api/history'&&m==='GET'){const id=u.searchParams.get('patient');return J(JSON.parse((await db.prepare('SELECT data FROM dv2_histories WHERE patient_id=?').bind(id).first())?.data||'{}'))}
  if(p==='/api/history'&&m==='PUT'){const d=await read(req);if(!d||!str(d.patient)||!d.data||typeof d.data!=='object'||JSON.stringify(d.data).length>80000)return E('Historia inválida');await db.prepare('INSERT INTO dv2_histories(patient_id,data) VALUES(?,?) ON CONFLICT(patient_id) DO UPDATE SET data=excluded.data,updated_at=CURRENT_TIMESTAMP').bind(d.patient,JSON.stringify(d.data)).run();await audit(db,'history',d.patient,'update');return J({ok:true})}
  if(p==='/api/marks'&&m==='GET'){const id=u.searchParams.get('patient');return J({marks:(await db.prepare('SELECT * FROM dv2_marks WHERE patient_id=? ORDER BY created_at').bind(id).all()).results,notes:(await db.prepare('SELECT * FROM dv2_tooth_notes WHERE patient_id=?').bind(id).all()).results})}
  if(p==='/api/marks'&&m==='POST'){const d=await read(req);if(!d||!/^([1-4][1-8]|[5-8][1-5])$/.test(d.tooth)||!['V','M','D','L','O'].includes(d.surface)||!['caries','restauracion','blanca','sarro'].includes(d.code))return E('Marca inválida');await db.batch([db.prepare('DELETE FROM dv2_marks WHERE patient_id=? AND tooth=? AND surface=?').bind(d.patient,d.tooth,d.surface),db.prepare('INSERT INTO dv2_marks(id,patient_id,tooth,surface,code) VALUES(?,?,?,?,?)').bind(uid(),d.patient,d.tooth,d.surface,d.code)]);await audit(db,'mark',d.patient,'add');return J({ok:true})}
