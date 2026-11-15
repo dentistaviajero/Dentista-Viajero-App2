@@ -1,3 +1,4 @@
+import { escuelasAPI } from './escuelas-api.js';
 const J=(v,s=200)=>new Response(JSON.stringify(v),{status:s,headers:{'content-type':'application/json; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff'}});
 const E=(msg,s=400)=>J({error:msg},s), uid=()=>crypto.randomUUID();
 const enc=new TextEncoder();
@@ -26,6 +27,8 @@ async function api(req,env){const db=env.DB;if(!db)return E('Falta enlace DB',50
  if(p==='/api/logout'&&m==='POST')return new Response('{"ok":true}',{headers:{'content-type':'application/json','set-cookie':'dv_session=; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=0'}});
  if(!await valid(req,env))return E('Sesión no autorizada',401);
  if(p==='/api/me')return J({ok:true});
+ const respuestaEscuelas = await escuelasAPI(req,env);
+if(respuestaEscuelas)return respuestaEscuelas;
  if(p==='/api/patients'&&m==='GET')return J((await db.prepare('SELECT * FROM dv2_patients ORDER BY folio DESC LIMIT 1500').all()).results);
  if(p==='/api/patients'&&m==='POST'){
   const d=await read(req);if(!d||!str(d.nombre)||!d.nombre.trim())return E('Nombre obligatorio');const x=fields(d,allow.patients);if(!safe(x))return E('Datos inválidos');const id=uid();
