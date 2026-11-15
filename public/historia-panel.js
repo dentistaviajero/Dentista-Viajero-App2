@@ -1,0 +1,53 @@
+/* Dentista Viajero - navegación clínica por paneles. Compatible con app.js. */
+(function(){
+ const oldShell=shell, oldFicha=ficha, oldHistory=history, oldOdonto=odonto, oldBalance=patientBalance, oldVisits=visits, oldPrint=printables;
+ const sections=[['identidad','Ficha de identidad','🪪'],['clinica','Historia clínica','🩺'],['odontograma','Odontograma','🦷'],['habitos','Hábitos','🍎'],['nacimiento','Nacimiento y lactancia','🍼'],['sueno','Trastornos de sueño','🌙'],['saldos','Saldos y cotizaciones','💰'],['notas','Notas e impresiones','📝']];
+ let active=false, current='identidad', defaultTooth='';
+ const e=x=>esc(x??'');
+ const categories={
+  clinica:['ALERTAS Y ANTECEDENTES','PATOLOGÍAS','MOTIVO DE CONSULTA','RIESGOS'],
+  habitos:['HÁBITOS ORALES','HÁBITOS GENERALES Y SUEÑO','HIGIENE ORAL'],
+  nacimiento:['DATOS DE NACIMIENTO','ALIMENTACIÓN INICIAL'],
+  sueno:['HÁBITOS GENERALES Y SUEÑO']
+ };
+ function nav(){return `<div class="hc-head"><button id="hc-return" type="button">← Pacientes</button><div class="hc-brand">Dentista <b>Viajero</b><small>Clínica</small></div><div class="hc-heading"><strong>Historia Clínica</strong><span>Expediente del paciente</span></div><div class="hc-pippo" aria-label="Pippo tomando notas">📋</div></div><div class="hc-layout"><aside class="hc-sidebar"><div class="hc-person"><strong>${e(patient?.nombre)}</strong><span>Folio ${e(String(patient?.folio??'').padStart(4,'0'))} · ${e(age(patient?.fecha_nacimiento))}</span></div>${sections.map(([id,name,icon])=>`<button type="button" class="hc-tab ${current===id?'selected':''}" data-hc="${id}"><span>${icon}</span>${name}</button>`).join('')}</aside><section class="hc-work"><div id="hc-content"></div></section></div>`}
+ function attach(){document.getElementById('hc-return')?.addEventListener('click',()=>{active=false;go('patients')});document.querySelectorAll('[data-hc]').forEach(b=>b.onclick=()=>open(b.dataset.hc))}
+ function base(){app.innerHTML=`<main class="hc-root">${nav()}</main>`;attach()}
+ // Las pantallas originales siguen gestionando las operaciones de base de datos.
+ shell=function(html){if(!active||!patient){oldShell(html);return}base();document.getElementById('hc-content').innerHTML=html;document.querySelectorAll('#hc-content #back').forEach(b=>b.onclick=()=>open('identidad'))};
+ ficha=function(){if(!patient){active=false;return oldFicha()}active=true;open('identidad')};
+ async function formGroup(type){
+  const h=await api('history?patient='+encodeURIComponent(patient.id));
+  const wanted=categories[type],selected=[];let take=false;
+  for(const f of fields){if(f[1]==='head')take=wanted.includes(f[0]);if(take){if(type==='sueno'&&!['HÁBITOS GENERALES Y SUEÑO','sueno','sueno_otro'].includes(f[0]))continue;if(type==='habitos'&&f[0]==='HÁBITOS GENERALES Y SUEÑO')continue;selected.push(f)}}
+  const label={clinica:'Historia clínica y antecedentes',habitos:'Hábitos e higiene',nacimiento:'Nacimiento y lactancia',sueno:'Trastornos del sueño y respiración'}[type];
+  shell(`<div class="hc-card"><h2>${label}</h2><p class="hc-help">Los campos vacíos indican información aún no evaluada.</p><form id="hc-form">${selected.map(f=>fieldHTML(f,h)).join('')}<button class="hc-save" type="submit">Guardar cambios</button></form><p id="hc-feedback" role="status"></p></div>`);
+  document.getElementById('hc-form').onsubmit=async ev=>{ev.preventDefault();const form=ev.currentTarget;const updates=Object.fromEntries(new FormData(form));for(const f of selected)if(f[2]==='check')updates[f[0]]=[...form.querySelectorAll(`[data-key="${f[0]}"]:checked`)].map(x=>x.value);try{await api('history','PUT',{patient:patient.id,data:{...h,...updates}});document.getElementById('hc-feedback').textContent='Cambios guardados en el expediente.'}catch(err){document.getElementById('hc-feedback').textContent='No se guardó: '+err.message}};
+ }
+ async function identity(){
+  const p=patient;
+  const h=await api('history?patient='+encodeURIComponent(p.id)).catch(()=>({}));
+  const visitsRows=await api('visits?patient='+encodeURIComponent(p.id)).catch(()=>[]);
+  const last=visitsRows.length?visitsRows.map(x=>x.created_at).filter(Boolean).sort().at(-1):'';
+  const sex=String(p.sexo||'').toLowerCase();
+  shell(`<div class="hc-card"><div class="hc-idtitle"><div class="hc-face">${sex.startsWith('f')?'👧':sex.startsWith('m')?'👦':'🧒'}</div><div><h2>Ficha de identidad</h2><p>Folio ${e(String(p.folio??'').padStart(4,'0'))}</p></div></div><form id="hc-identity"><div class="hc-fields"><label>Nombre completo<input name="nombre" required value="${e(p.nombre)}"></label><label>Sexo<select name="sexo"><option value="">Sin registrar</option>${['Femenino','Masculino','No especificado'].map(x=>`<option ${p.sexo===x?'selected':''}>${x}</option>`).join('')}</select></label><label>Fecha de nacimiento<input type="date" name="fecha_nacimiento" value="${e(p.fecha_nacimiento)}"></label><label>Estado del paciente<select name="estado">${['operatoria','ortopedia','preventivo','ausente','terminado'].map(x=>`<option value="${x}" ${p.estado===x?'selected':''}>${x[0].toUpperCase()+x.slice(1)}</option>`).join('')}</select></label><label>Tutor / responsable<input name="tutor_nombre" value="${e(p.tutor_nombre)}"></label><label>Parentesco<input name="tutor_parentesco" value="${e(p.tutor_parentesco)}"></label><label>Teléfono<input name="telefono" value="${e(p.telefono)}"></label><label>Médico tratante<input name="medico" value="${e(p.medico)}"></label><label>Escuela / campaña<input name="escuela_campana" value="${e(p.escuela_campana)}"></label><label>Ciudad<input name="ciudad" value="${e(p.ciudad)}"></label><label>Colonia<input name="colonia" value="${e(p.colonia)}"></label></div><div class="hc-info"><strong>Última atención registrada:</strong> ${e(last?last.slice(0,10):'Sin consultas registradas')}<br><strong>Edad:</strong> ${e(age(p.fecha_nacimiento))}<br><strong>Seguimiento sugerido:</strong> ${parseInt(age(p.fecha_nacimiento))<6?'Cada 3 meses':'Cada 6 meses'} (ajustable por riesgo clínico)</div><div class="hc-alert"><strong>Alertas médicas / alergias</strong><p>${e(h.alergias||h.enfermedades||'Sin alertas registradas')}</p></div><div class="hc-info"><strong>Observaciones generales</strong><p>${e(h.patologias_obs||h.riesgo_obs||'Sin observaciones registradas')}</p></div><button class="hc-save" type="submit">Guardar identidad</button><p id="hc-feedback" role="status"></p></form></div>`);
+  document.getElementById('hc-identity').onsubmit=async ev=>{ev.preventDefault();const d=Object.fromEntries(new FormData(ev.currentTarget));try{await api('patients/'+p.id,'PATCH',d);Object.assign(p,d);document.getElementById('hc-feedback').textContent='Datos guardados';}catch(err){document.getElementById('hc-feedback').textContent='No se pudo guardar: '+err.message}};
+ }
+ async function notes(){shell(`<div class="hc-card"><h2>Notas e impresiones</h2><p>Recetas, consentimientos, notas de avance y documentos clínicos.</p><div class="hc-actions"><button id="hc-visits">Notas clínicas y evolución</button><button id="hc-print">Recetas y consentimiento</button></div><p class="hc-help">La carga de radiografías y archivos requiere almacenamiento seguro en el servidor; aún no está habilitada.</p></div>`);document.getElementById('hc-visits').onclick=()=>oldVisits();document.getElementById('hc-print').onclick=()=>oldPrint()}
+ async function open(s){if(!patient)return;active=true;current=s;base();document.getElementById('hc-content').innerHTML='<div class="hc-card">Cargando sección…</div>';try{if(s==='identidad')await identity();else if(categories[s])await formGroup(s);else if(s==='odontograma')await oldOdonto();else if(s==='saldos')await oldBalance(defaultTooth);else if(s==='notas')await notes();else await identity()}catch(err){document.getElementById('hc-content').innerHTML=`<div class="hc-card">No se pudo abrir la sección: ${e(err.message)}</div>`}}
+ // Acceso al expediente desde la ficha de búsqueda.
+ const oldSub=sub;
+ sub=function(s){if(s==='history'||s==='edit')return ficha();if(s==='odonto'){active=true;return open('odontograma')}if(s==='patientBalance'){active=true;return open('saldos')}if(s==='visits'||s==='print'){active=true;return open('notas')}return oldSub(s)};
+ // El botón de cotización del odontograma usa el mismo panel.
+ patientBalance=async function(t=''){if(!active)return oldBalance(t);defaultTooth=t||defaultTooth;current='saldos';base();await oldBalance(defaultTooth)};
+ // Tarifario predeterminado; se conserva la API existente de cotizaciones.
+ const prices={'Paquete preventivo':780,'Consulta / valoración':500,'Restauración (resina)':540,'Sellador':370,'Corona infantil':1000,'Ortopedia / Ortodoncia':21000,'Campaña escolar':250,'Otro procedimiento':0};
+ const origShell=shell;
+ shell=function(html){origShell(html);if(active&&current==='saldos')enhanceQuote()};
+ function enhanceQuote(){const form=document.getElementById('quoteform');if(!form)return;const proc=form.querySelector('[name="procedure"]'),amount=form.querySelector('[name="amount"]');if(!proc||!amount)return;proc.innerHTML='<option value="">Selecciona procedimiento</option>'+Object.keys(prices).map(x=>`<option value="${e(x)}">${e(x)} — ${prices[x]?'$'+prices[x].toLocaleString('es-MX'):'monto libre'}</option>`).join('');amount.placeholder='Vacío = precio automático';amount.required=false;amount.min='0';amount.step='0.01';const hint=document.createElement('p');hint.className='hc-help';hint.textContent='Deja el monto vacío para usar la tarifa. Si escribes una cantidad, sustituye el precio.';amount.after(hint);form.addEventListener('submit',ev=>{if(!proc.value)return;const val=amount.value.trim();const n=val===''?prices[proc.value]:Number(val);if(!Number.isFinite(n)||n<0){ev.preventDefault();ev.stopImmediatePropagation();alert('Introduce un monto válido');return}amount.value=String(n)},true)}
+ history=function(){active=true;return open('clinica')};
+ odonto=function(){active=true;return open('odontograma')};
+ visits=function(){active=true;return open('notas')};
+ printables=function(){active=true;current='notas';return oldPrint()};
+ window.dvHistoriaAbrir=()=>ficha();
+})();
