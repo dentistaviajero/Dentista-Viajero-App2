@@ -1,0 +1,10 @@
+
+.dv-home .dv-menu .dv-shortcuts{grid-column:1/-1;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px;width:100%}
+.dv-home .dv-menu .dv-shortcuts button{width:100%;min-width:0;min-height:70px;border:0;border-radius:18px;color:white;font-weight:800;font-size:clamp(14px,3.5vw,20px);display:flex;align-items:center;justify-content:center;gap:8px;padding:10px 8px;box-shadow:0 3px 6px #0002}
+.dv-home .dv-menu .dv-shortcuts #dv-reminders-open{background:linear-gradient(110deg,#08aa5e,#067b43)!important;grid-column:auto!important}
+.dv-home .dv-menu .dv-shortcuts #dv-quick-open{background:linear-gradient(110deg,#6656dc,#4430a3)}
+.dv-home .dv-menu .dv-shortcuts svg{width:25px;height:25px;flex-shrink:0}
+.dv-quick-view{padding:18px;max-width:650px;margin:auto}.dv-quick-view label{display:block;margin:12px 0;font-weight:650}
+.dv-quick-view input,.dv-quick-view textarea{display:block;width:100%;box-sizing:border-box;margin-top:5px;padding:12px;border:1px solid #aaa;border-radius:9px;font:inherit}
+.dv-quick-view .dv-q-actions{display:flex;gap:12px;flex-wrap:wrap;margin:18px 0}.dv-quick-view button{padding:12px 16px;border-radius:10px;border:0;background:#5543c2;color:white;font-weight:bold}
+.dv-quick-view .dv-q-note{background:#f1efff;border-radius:10px;padding:12px}
