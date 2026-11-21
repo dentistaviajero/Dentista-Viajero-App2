@@ -1,6 +1,6 @@
 /* DV Clínica: mejoras incrementales, sin alterar datos existentes. */
 (()=>{'use strict';
-const PRICE={ 'Paquete preventivo infantil':78000,'Ionómero':54000,'MI Paste Plus':65000,'Sellador':39000,'Ortopedia maxilar':2200000};
+const PRICE={ 'Paquete preventivo infantil':78000,'Ionómero':54000,'MI Paste Plus':65000,'Sellador':39000,'Ortopedia maxilar':2200000,'Consulta':50000,'Extracción (mínimo)':35000,'Reposición aparato ortopedia':60000,'Juego de brackets':100000,'Pulpotomía (referencia)':80000,'Corona (referencia)':120000,'Tratamiento de campaña':25000,'Tratamiento de choque anticaries':25000,'Barniz de flúor':0,'Diamino fluoruro de plata':0};
 const fmt=n=>(n/100).toLocaleString('es-MX',{style:'currency',currency:'MXN'});
 const safe=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const iso=()=>{let d=new Date();return [d.getFullYear(),String(d.getMonth()+1).padStart(2,'0'),String(d.getDate()).padStart(2,'0')].join('-')};
@@ -29,7 +29,7 @@ function relabel(){if(palette){let x=palette.find(x=>x[0]==='blanca');if(x)x[1]=
 function observer(){updateForm();enhanceVisits();relabel()}
 let busy=false;
 const oldApi=window.api;
-if(typeof oldApi==='function')window.api=async function(path,method='GET',data){const result=await oldApi(path,method,data);
+if(typeof oldApi==='function')window.api=async function(path,method='GET',data){if(path==='quotes'&&method==='POST'&&data&&!data.category){data.category=window.dvCategoryFor?window.dvCategoryFor(data.procedure):'operatoria'}const result=await oldApi(path,method,data);
  if(path==='marks'&&method==='POST'&&data&&['caries','blanca'].includes(data.code)&&!busy){busy=true;try{const procedure=data.code==='caries'?'Ionómero':'MI Paste Plus';const existing=await oldApi('quotes?patient='+encodeURIComponent(data.patient));if(!existing.some(q=>q.procedure===procedure&&q.status!=='cancelado'&&(procedure==='MI Paste Plus'||q.tooth===data.tooth))){await oldApi('quotes','POST',{patient:data.patient,tooth:data.tooth,procedure,amount_cents:PRICE[procedure],source:'odontograma'});setTimeout(()=>alert(`Se agregó a Saldos: ${procedure} (${fmt(PRICE[procedure])}). Es una cotización pendiente, no un tratamiento realizado.`),50)}}catch(e){alert('Marca guardada, pero no se pudo crear cotización: '+e.message)}finally{busy=false}}
  if(path==='payments'&&method==='POST'&&data?.patient){setTimeout(async()=>{if(!confirm('¿El paciente acudió presencialmente el día de este abono? Aceptar registra una visita hoy; Cancelar deja solo el pago.'))return;try{await oldApi('visits','POST',{patient:data.patient,data:{fecha_atencion:iso(),tipo_atencion:'consulta',motivo:'Asistencia confirmada al registrar abono'}})}catch(e){alert('Abono registrado, pero no se pudo guardar visita: '+e.message)}},100)}
  return result};
