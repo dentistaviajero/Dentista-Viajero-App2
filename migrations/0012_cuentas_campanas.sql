@@ -1,0 +1,6 @@
+-- Ejecutar UNA VEZ sobre la base D1 dv2. No elimina expedientes ni movimientos.
+CREATE TABLE IF NOT EXISTS dv2_quote_categories (quote_id TEXT PRIMARY KEY REFERENCES dv2_quotes(id) ON DELETE CASCADE, category TEXT NOT NULL CHECK(category IN ('ortopedia','operatoria','prevencion','campana')));
+CREATE TABLE IF NOT EXISTS dv2_payment_categories (payment_id TEXT PRIMARY KEY REFERENCES dv2_payments(id) ON DELETE CASCADE, category TEXT NOT NULL CHECK(category IN ('ortopedia','operatoria','prevencion','campana')));
+CREATE TABLE IF NOT EXISTS dv2_deleted_quotes (id TEXT PRIMARY KEY,patient_id TEXT NOT NULL,tooth TEXT,procedure TEXT NOT NULL,amount_cents INTEGER NOT NULL,status TEXT,source TEXT,reason TEXT NOT NULL,deleted_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS dv2_campaign_prices (school_id TEXT PRIMARY KEY REFERENCES dv2_schools(id) ON DELETE CASCADE,caries_cents INTEGER NOT NULL DEFAULT 25000,preventive_cents INTEGER NOT NULL DEFAULT 25000);
+CREATE TABLE IF NOT EXISTS dv2_campaign_students (student_id TEXT PRIMARY KEY REFERENCES dv2_school_students(id) ON DELETE CASCADE,status TEXT NOT NULL DEFAULT 'cotizado' CHECK(status IN ('cotizado','autorizado','realizado','cobrado','atencion_externa','no_acepta')),updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
