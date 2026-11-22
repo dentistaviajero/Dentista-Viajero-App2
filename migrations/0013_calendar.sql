@@ -1,0 +1,3 @@
+CREATE TABLE IF NOT EXISTS dv_calendar_auth (id INTEGER PRIMARY KEY CHECK(id=1), token_cipher TEXT NOT NULL, updated_at TEXT DEFAULT CURRENT_TIMESTAMP);
+CREATE TABLE IF NOT EXISTS dv_appointments (id TEXT PRIMARY KEY, google_event_id TEXT UNIQUE, nombre TEXT NOT NULL DEFAULT '', edad TEXT NOT NULL DEFAULT '', gustos TEXT NOT NULL DEFAULT '', telefono TEXT NOT NULL DEFAULT '', motivo TEXT NOT NULL DEFAULT '', inicio TEXT NOT NULL, fin TEXT NOT NULL, estado TEXT NOT NULL DEFAULT 'pendiente', permiso INTEGER NOT NULL DEFAULT 0, patient_id TEXT, source TEXT NOT NULL DEFAULT 'google', updated_at TEXT DEFAULT CURRENT_TIMESTAMP);
+CREATE INDEX IF NOT EXISTS idx_dv_appointments_inicio ON dv_appointments(inicio);
