@@ -1,3 +1,4 @@
+import { calendarAPI, calendarCallback } from './calendar-api.js';
 import { clinicaV4API } from './clinica-v4-api.js';
 import { escuelasAPI } from './escuelas-api.js';
 import { seguimientoAPI } from './seguimiento-api.js';
@@ -29,6 +30,7 @@ async function api(req,env){const db=env.DB;if(!db)return E('Falta enlace DB',50
  if(p==='/api/logout'&&m==='POST')return new Response('{"ok":true}',{headers:{'content-type':'application/json','set-cookie':'dv_session=; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=0'}});
  if(!await valid(req,env))return E('Sesión no autorizada',401);
  if(p==='/api/me')return J({ok:true});
+ const calendarResponse=await calendarAPI(req,env);if(calendarResponse)return calendarResponse;
  const respuestaSeguimiento = await seguimientoAPI(req,env);
  if(respuestaSeguimiento)return respuestaSeguimiento;
  const respuestaClinicaV4 = await clinicaV4API(req,env);
@@ -74,4 +76,4 @@ if(respuestaEscuelas)return respuestaEscuelas;
  if(p==='/api/backup'&&m==='GET'){const data={formato:'dv-clinica-v2',version:2,fecha:new Date().toISOString(),tablas:{}};for(const t of tables)data.tablas[t]=(await db.prepare(`SELECT * FROM ${t} LIMIT 10000`).all()).results;return J(data)}
  return E('Ruta desconocida',404)
 }
-export default {async fetch(req,env){try{const u=new URL(req.url);if(u.pathname.startsWith('/api/'))return await api(req,env);const r=await env.ASSETS.fetch(req);const h=new Headers(r.headers);h.set('x-content-type-options','nosniff');h.set('x-frame-options','DENY');h.set('cache-control','no-store');h.set('content-security-policy',"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; object-src 'none'; frame-ancestors 'none'");return new Response(r.body,{status:r.status,headers:h})}catch(e){console.error(e);return E('Error interno. Revisa los registros del Worker.',500)}}};
+export default {async fetch(req,env){try{const u=new URL(req.url);const callbackResponse=await calendarCallback(req,env);if(callbackResponse)return callbackResponse;if(u.pathname.startsWith('/api/'))return await api(req,env);const r=await env.ASSETS.fetch(req);const h=new Headers(r.headers);h.set('x-content-type-options','nosniff');h.set('x-frame-options','DENY');h.set('cache-control','no-store');h.set('content-security-policy',"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; object-src 'none'; frame-ancestors 'none'");return new Response(r.body,{status:r.status,headers:h})}catch(e){console.error(e);return E('Error interno. Revisa los registros del Worker.',500)}}};
