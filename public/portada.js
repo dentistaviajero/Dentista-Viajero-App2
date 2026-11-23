@@ -22,7 +22,8 @@
         <button class="dv-icon" id="dv-home-button">⌂</button>
         <strong>Dentista Viajero · Clínica</strong>
         <button class="dv-icon" id="dv-alerts">♧</button>
-        <button class="dv-icon" id="dv-settings">⚙</button>
+        <button class="dv-icon" id="dv-private" type="button" title="Administración privada" aria-label="Administración privada: finanzas e inventario">▣</button>
+        <button class="dv-icon" id="dv-settings" title="Respaldos">⚙</button>
         <button class="dv-icon" id="dv-exit">⏻</button>
       </div>
       <img class="dv-banner" src="/recepcion-banner.webp"
@@ -80,6 +81,7 @@
     document.getElementById('dv-settings').onclick = () => {
       if (confirm('¿Abrir respaldos administrativos?')) go('backup');
     };
+    document.getElementById('dv-private').onclick = privateHub;
     document.getElementById('dv-print').onclick = printHub;
     document.getElementById('dv-calendar').onclick = () =>
       window.open('https://calendar.google.com/calendar/u/0/r',
@@ -102,6 +104,22 @@
       if (el) el.textContent = 'No disponible';
     });
   };
+
+  function privateHub() {
+    app.innerHTML = `<div class="dv-home">
+      <div class="dv-top"><button class="dv-icon" id="dv-private-back" aria-label="Volver a inicio">←</button><strong>Administración privada</strong><span aria-hidden="true">▣</span></div>
+      <main class="dv-private-main">
+        <h2>Administración del consultorio</h2>
+        <p>Acceso reservado para el control interno del consultorio.</p>
+        <div class="dv-private-grid">
+          <section class="dv-private-card"><span aria-hidden="true" class="dv-private-symbol">▤</span><h3>Finanzas</h3><p>Ingresos, egresos y movimientos del consultorio, la combi y personales.</p><span class="dv-private-pending">Módulo pendiente de implementación</span></section>
+          <section class="dv-private-card"><span aria-hidden="true" class="dv-private-symbol">▦</span><h3>Inventario</h3><p>Materiales, instrumental, existencias, movimientos y caducidades.</p><span class="dv-private-pending">Módulo pendiente de implementación</span></section>
+        </div>
+        <p class="dv-private-note">Estas herramientas aún no registran ni modifican información. Se habilitarán al implementar sus módulos y almacenamiento.</p>
+      </main>
+    </div>`;
+    document.getElementById('dv-private-back').onclick = home;
+  }
 
   async function printHub() {
     app.innerHTML = `<div class="dv-home">
