@@ -54,3 +54,15 @@
 }
 @media(max-width:390px){.hc-top-sections{gap:6px;padding:8px}.hc-top-tab{font-size:12px;padding:8px 6px}}
 @media print{.hc-top-sections{display:none!important}}
+
+
+/* Botones táctiles amplios: separación para evitar pulsaciones accidentales */
+@media(max-width:760px){
+ .hc-top-sections{gap:14px;padding:14px;margin-bottom:16px}
+ .hc-top-tab{min-height:76px;padding:14px 12px;gap:10px;font-size:15px;border-radius:16px;touch-action:manipulation}
+ .hc-top-tab span{font-size:24px}
+}
+@media(max-width:390px){
+ .hc-top-sections{gap:12px;padding:10px}
+ .hc-top-tab{min-height:76px;padding:12px 9px;font-size:14px}
+}
