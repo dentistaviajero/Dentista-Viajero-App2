@@ -41,3 +41,16 @@
  .hc-work .teeth{overflow-x:auto}
 }
 @media print{#hc-menu-toggle{display:none!important}.hc-sidebar{display:none!important}.hc-layout{display:block}.hc-work{border:0;box-shadow:none}}
+
+
+/* Accesos directos siempre visibles sobre el expediente en móvil */
+.hc-top-sections{display:none}
+@media(max-width:760px){
+ #hc-menu-toggle{display:none}
+ .hc-top-sections{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;background:#fff;border:1px solid #cce6f1;border-radius:17px;padding:12px;margin:0 0 12px;box-shadow:0 5px 20px #0b638014}
+ .hc-top-tab{display:flex;align-items:center;justify-content:flex-start;gap:7px;text-align:left;min-width:0;min-height:52px;padding:10px 9px;border:1px solid #cce5f2;border-radius:13px;background:#eaf7ff;color:#16436d;font-size:13px;font-weight:750;line-height:1.25;overflow-wrap:anywhere}
+ .hc-top-tab span{font-size:20px;flex:none}
+ .hc-top-tab.selected{background:#d6f4ff;border:2px solid #0789b7;color:#075278}
+}
+@media(max-width:390px){.hc-top-sections{gap:6px;padding:8px}.hc-top-tab{font-size:12px;padding:8px 6px}}
+@media print{.hc-top-sections{display:none!important}}
