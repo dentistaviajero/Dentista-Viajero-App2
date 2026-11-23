@@ -1,5 +1,5 @@
 /* Dentista Viajero Clínica: shell offline v3. No almacena /api ni expedientes. */
-const CACHE='dv-clinica-shell-v3';
+const CACHE='dv-clinica-shell-v4';
 const CORE=['/index.html','/app.js','/portada.js','/imprimibles.js','/pacientes.js','/historia-panel.js','/documentos-v2.js','/escuelas-v3.js','/offline-acceso.js','/offline-register.js','/styles.css','/portada.css','/pacientes.css','/historia-panel.css','/documentos-v2.css','/escuelas-v3.css'];
 const OPTIONAL=['/manifest.webmanifest','/icon-192.png','/icon-512.png'];
 self.addEventListener('install',event=>event.waitUntil((async()=>{
@@ -28,9 +28,7 @@ self.addEventListener('fetch',event=>{
   })());return;
  }
  event.respondWith((async()=>{
-  const cached=await caches.match(request);if(cached)return cached;
-  const response=await fetch(request);
-  if(response.ok){const c=await caches.open(CACHE);await c.put(request,response.clone())}
-  return response;
+  try {const response=await fetch(request,{cache:'no-store'});if(response.ok){const c=await caches.open(CACHE);await c.put(request,response.clone())}return response}
+  catch {return (await caches.match(request))||Response.error()}
  })());
 });
