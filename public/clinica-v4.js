@@ -27,9 +27,23 @@ async function render(){const form=document.querySelector('#quoteform');if(!form
  if(!form.isConnected||patient.id!==id)return;
  form.dataset.dvV4=id;currentId=id;
  const card=form.closest('.card');if(!card)return;
- const payform=card.querySelector('#payform');if(payform){const area=document.createElement('label');area.id='dv-pay-area';area.textContent='Aplicar abono a';area.innerHTML='<strong>Aplicar abono a</strong><select name="category">'+Object.entries(labels).map(([k,v])=>`<option value="${k}">${v}</option>`).join('')+'</select>';payform.prepend(area);payform.addEventListener('submit',e=>{if(e.defaultPrevented)return},true);
- // El manejador original no incluye categoría; interceptar para guardar correctamente.
- payform.addEventListener('submit',async e=>{e.preventDefault();e.stopImmediatePropagation();const fd=new FormData(payform);const amount=Math.round(Number(fd.get('amount'))*100),concept=String(fd.get('concept')||'Abono'),cat=String(fd.get('category'));if(!Number.isSafeInteger(amount)||amount<=0)return alert('Importe inválido');const btn=payform.querySelector('button[type="submit"],button');btn.disabled=true;try{await window.api('payments','POST',{patient:id,amount_cents:amount,concept,category:cat});await patientBalance()}catch(err){alert(err.message);btn.disabled=false}},true);
+ const payform=card.querySelector('#payform');if(payform){
+ const suggestions={
+  operatoria:['Resina','Ionómero'],
+  ortopedia:['Mensualidad de ortopedia','Reposición de aparato','Reposición de brackets','Limpieza dental','Limpieza de resina','Retiro de brackets'],
+  prevencion:['Consulta preventiva','Profilaxis','Sellador','Barniz de flúor','Remineralización'],
+  campana:['Tratamiento de campaña escolar']
+ };
+ const area=document.createElement('label');area.id='dv-pay-area';area.innerHTML='<strong>Área de trabajo</strong><select name="category">'+Object.entries(labels).map(([k,v])=>`<option value="${k}">${v}</option>`).join('')+'</select>';
+ const procedure=document.createElement('label');procedure.id='dv-pay-procedure';procedure.innerHTML='<strong>Procedimiento al que se abona</strong><select name="payment_procedure" required></select>';
+ const note=document.createElement('p');note.className='muted';note.textContent='Elige un tratamiento cotizado, un procedimiento habitual o escribe uno diferente. El concepto del abono se guardará en el historial.';
+ payform.prepend(area,procedure,note);
+ const categorySelect=area.querySelector('select'),procedureSelect=procedure.querySelector('select'),conceptInput=payform.querySelector('[name="concept"]');
+ const options=()=>{const cat=categorySelect.value;const quoted=quotes.filter(q=>q.status!=='cancelado'&&(q.category||category(q.procedure))===cat).map(q=>q.procedure+(q.tooth?' · Diente '+q.tooth:''));const all=[...new Set([...quoted,...(suggestions[cat]||[])])];procedureSelect.innerHTML='<option value="">Seleccionar procedimiento</option>'+all.map(x=>`<option value="${esc(x)}">${esc(x)}</option>`).join('')+'<option value="__custom__">Otro procedimiento (escribir)</option>';};
+ categorySelect.onchange=options;options();
+ if(conceptInput){conceptInput.placeholder='Concepto del abono (editable)';conceptInput.value='';conceptInput.required=true}
+ procedureSelect.onchange=()=>{if(!conceptInput)return;if(procedureSelect.value==='__custom__'){conceptInput.value='';conceptInput.focus()}else conceptInput.value=procedureSelect.value};
+ payform.addEventListener('submit',async e=>{e.preventDefault();e.stopImmediatePropagation();const fd=new FormData(payform);const amount=Math.round(Number(fd.get('amount'))*100),concept=String(fd.get('concept')||'').trim(),cat=String(fd.get('category'));if(!procedureSelect.value)return alert('Selecciona el procedimiento');if(!concept||concept.length>250)return alert('Escribe un concepto válido (máximo 250 caracteres)');if(!Number.isSafeInteger(amount)||amount<=0)return alert('Importe inválido');const btn=payform.querySelector('button[type="submit"],button');btn.disabled=true;try{await window.api('payments','POST',{patient:id,amount_cents:amount,concept,category:cat});await patientBalance()}catch(err){alert(err.message);btn.disabled=false}},true);
  }
  const qformSelect=form.querySelector('[name="procedure"]');if(qformSelect){form.addEventListener('submit',async e=>{e.preventDefault();e.stopImmediatePropagation();const fd=new FormData(form);const amount=Math.round(Number(fd.get('amount'))*100);if(!Number.isSafeInteger(amount)||amount<0)return alert('Importe inválido');try{await window.api('quotes','POST',{patient:id,tooth:String(fd.get('tooth')||''),procedure:String(fd.get('procedure')),amount_cents:amount,source:'manual',category:category(fd.get('procedure'))});await patientBalance()}catch(err){alert(err.message)}},true)}
  const section=document.createElement('section');section.id='dv-accounts-v4';section.style.cssText='border:2px solid #a5d9d2;border-radius:16px;padding:14px;margin:14px 0;background:#f5fffb';
