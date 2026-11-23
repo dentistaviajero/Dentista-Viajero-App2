@@ -21,3 +21,17 @@
 .dv-footer{display:block;width:100%;height:auto}
 .dv-home .dv-notice{margin:8px 16px;color:#25455d;font-size:13px}
 @media(max-width:440px){.dv-menu{gap:7px;padding:10px}.dv-summary{gap:5px;padding:8px}.dv-stat{padding:8px}.dv-top{gap:5px;padding:9px}}
+
+
+/* Acceso superior a módulos administrativos */
+.dv-top #dv-private{border:1px solid #ffffff80;background:#ffffff1c;border-radius:12px;min-width:44px;min-height:44px;font-size:27px}
+.dv-private-main{max-width:950px;margin:auto;padding:18px 16px 32px}
+.dv-private-main h2{color:#0b3971}
+.dv-private-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin-top:20px}
+.dv-private-card{background:#fff;border:1px solid #bfe0ee;border-radius:20px;padding:20px;box-shadow:0 6px 20px #0c6b9a12}
+.dv-private-symbol{font-size:38px;color:#0b8fbb}
+.dv-private-card h3{color:#103d70;margin:8px 0}
+.dv-private-card p{line-height:1.5}
+.dv-private-pending{display:inline-block;background:#e8f5fb;color:#225779;border-radius:12px;padding:8px 10px;font-weight:650;font-size:13px}
+.dv-private-note{color:#426376;font-size:14px;margin-top:18px}
+@media(max-width:600px){.dv-private-grid{grid-template-columns:1fr;gap:12px}.dv-private-card{padding:16px}.dv-top #dv-private{min-width:44px}}
