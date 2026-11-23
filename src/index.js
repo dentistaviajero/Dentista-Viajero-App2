@@ -12,11 +12,12 @@ function eq(a,b){if(typeof a!=='string'||typeof b!=='string')return false;let di
 async function valid(req,env){const secret=env.ADMIN_TOKEN;if(!secret||secret.length<16)return false;const c=(req.headers.get('cookie')||'').split(';').map(x=>x.trim()).find(x=>x.startsWith('dv_session='));if(!c)return false;const parts=c.slice(11).split('.');if(parts.length!==2)return false;const [until,signature]=parts;if(!/^\d{13}$/.test(until)||Number(until)<Date.now())return false;return eq(signature,await sig(secret,until))}
 async function read(req){const s=await req.text();if(s.length>180000)return null;try{return s?JSON.parse(s):{}}catch{return null}}
 function origin(req){const o=req.headers.get('origin');return !o||o===new URL(req.url).origin}
-const allow={patients:['nombre','fecha_nacimiento','tutor_nombre','tutor_parentesco','telefono','correo','ciudad','colonia','medico','origen','origen_otro','escuela_campana','estado','archivado'],schools:['nombre','clave','localidad']};
+const allow={patients:['nombre','fecha_nacimiento','sexo','tutor_nombre','tutor_parentesco','telefono','correo','ciudad','colonia','medico','origen','origen_otro','escuela_campana','estado','archivado'],schools:['nombre','clave','localidad']};
 const fields=(d,keys)=>Object.fromEntries(keys.filter(k=>Object.hasOwn(d,k)).map(k=>[k,d[k]]));
 const str=v=>typeof v==='string'&&v.length<=10000;
 const safe=d=>Object.values(d).every(v=>v===null||str(v)||typeof v==='number');
 async function audit(db,entity,id,action){await db.prepare('INSERT INTO dv2_audit(id,entity,entity_id,action) VALUES(?,?,?,?)').bind(uid(),entity,id,action).run()}
+async function ensurePatientSexColumn(db){const cols=(await db.prepare('PRAGMA table_info(dv2_patients)').all()).results;if(cols.some(c=>c.name==='sexo'))return;try{await db.prepare('ALTER TABLE dv2_patients ADD COLUMN sexo TEXT').run()}catch(err){if(!/duplicate column name/i.test(String(err?.message||err)))throw err}}
 const tables=['dv2_patients','dv2_histories','dv2_marks','dv2_tooth_notes','dv2_visits','dv2_quotes','dv2_payments','dv2_schools'];
 async function api(req,env){const db=env.DB;if(!db)return E('Falta enlace DB',503);const u=new URL(req.url),p=u.pathname,m=req.method;
  if(m!=='GET'&&!origin(req))return E('Origen no permitido',403);
@@ -37,11 +38,12 @@ async function api(req,env){const db=env.DB;if(!db)return E('Falta enlace DB',50
  if(respuestaClinicaV4)return respuestaClinicaV4;
  const respuestaEscuelas = await escuelasAPI(req,env);
 if(respuestaEscuelas)return respuestaEscuelas;
- if(p==='/api/patients'&&m==='GET')return J((await db.prepare('SELECT * FROM dv2_patients ORDER BY folio DESC LIMIT 1500').all()).results);
+ if(p==='/api/patients'&&m==='GET'){await ensurePatientSexColumn(db);return J((await db.prepare('SELECT * FROM dv2_patients ORDER BY COALESCE(updated_at,created_at) DESC, folio DESC').all()).results)}
  if(p==='/api/patients'&&m==='POST'){
+  await ensurePatientSexColumn(db);
   const d=await read(req);if(!d||!str(d.nombre)||!d.nombre.trim())return E('Nombre obligatorio');const x=fields(d,allow.patients);if(!safe(x))return E('Datos inválidos');const id=uid();
   const result=await db.batch([db.prepare("UPDATE dv2_counter SET value=value+1 WHERE name='patient'"),db.prepare(`INSERT INTO dv2_patients(id,folio,${Object.keys(x).join(',')}) VALUES(?,(SELECT value FROM dv2_counter WHERE name='patient'),${Object.keys(x).map(()=>'?').join(',')})`).bind(id,...Object.values(x))]);await audit(db,'patient',id,'create');return J({id},201) }
- const patient=p.match(/^\/api\/patients\/([a-f0-9-]+)$/);if(patient){const id=patient[1];if(m==='PATCH'){const d=await read(req),x=d&&fields(d,allow.patients);if(!x||!safe(x)||!Object.keys(x).length)return E('Datos inválidos');await db.prepare(`UPDATE dv2_patients SET ${Object.keys(x).map(k=>k+'=?').join(',')},updated_at=CURRENT_TIMESTAMP WHERE id=?`).bind(...Object.values(x),id).run();await audit(db,'patient',id,'update');return J({ok:true})}if(m==='GET')return J(await db.prepare('SELECT * FROM dv2_patients WHERE id=?').bind(id).first())}
+ const patient=p.match(/^\/api\/patients\/([a-f0-9-]+)$/);if(patient){const id=patient[1];if(m==='PATCH'){const d=await read(req);if(d&&Object.hasOwn(d,'sexo'))await ensurePatientSexColumn(db);const x=d&&fields(d,allow.patients);if(!x||!safe(x)||!Object.keys(x).length)return E('Datos inválidos');await db.prepare(`UPDATE dv2_patients SET ${Object.keys(x).map(k=>k+'=?').join(',')},updated_at=CURRENT_TIMESTAMP WHERE id=?`).bind(...Object.values(x),id).run();await audit(db,'patient',id,'update');return J({ok:true})}if(m==='GET')return J(await db.prepare('SELECT * FROM dv2_patients WHERE id=?').bind(id).first())}
  const patientDelete=p.match(/^\/api\/patients\/([a-f0-9-]+)$/);
  if(patientDelete&&m==='DELETE'){
   const id=patientDelete[1];
