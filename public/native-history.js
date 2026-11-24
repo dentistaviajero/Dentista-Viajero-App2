@@ -1,0 +1,1 @@
+window.dvNativeHistory = window.history;
