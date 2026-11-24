@@ -113,16 +113,32 @@
         <p>Acceso reservado para el control interno del consultorio.</p>
         <div class="dv-private-grid">
           <section class="dv-private-card"><span aria-hidden="true" class="dv-private-symbol">▤</span><h3>Finanzas</h3><p>Ingresos, egresos y movimientos del consultorio, la combi y personales.</p><button class="btn" id="dv-finance-open">Abrir finanzas</button></section>
-          <section class="dv-private-card"><span aria-hidden="true" class="dv-private-symbol">▦</span><h3>Inventario</h3><p>Materiales, instrumental, existencias, movimientos y caducidades.</p><span class="dv-private-pending">Módulo pendiente de implementación</span></section>
+          <section class="dv-private-card"><span aria-hidden="true" class="dv-private-symbol">▦</span><h3>Inventario</h3><p>Materiales, instrumental, existencias, movimientos y caducidades.</p><button class="btn" id="dv-inventory-open">Abrir inventario</button></section>
         </div>
-        <p class="dv-private-note">Finanzas registra movimientos reales. Inventario continúa pendiente.</p>
+        <p class="dv-private-note">Finanzas e Inventario · Control interno.</p>
       </main>
     </div>`;
     document.getElementById('dv-private-back').onclick = home;
     document.getElementById('dv-finance-open').onclick=financeView;
+    document.getElementById('dv-inventory-open').onclick=inventoryView;
   }
 
 
+function inventoryView(){
+ const today=new Date(Date.now()-21600000).toISOString().slice(0,10),soon=new Date(Date.parse(today)+30*86400000).toISOString().slice(0,10);
+ const states={stock:'Disponible',uso:'En uso',mantenimiento:'En mantenimiento',fuera_servicio:'Fuera de servicio'};
+ const alerts=x=>[...(x.quantity===0?['Agotado']:x.quantity<=x.minimum?['Stock bajo']:[]),...(x.expiry&&x.expiry<today?['Caducado — no utilizar']:x.expiry&&x.expiry<=soon?['Próximo a caducar']:[])];
+ app.innerHTML=`<div class="dv-home"><div class="dv-top"><button class="dv-icon" id="inv-back">←</button><strong>Inventario privado</strong></div><main style="padding:14px;max-width:850px;margin:auto"><div class="card"><h2>Inventario clínico</h2><div id="inv-summary">Consultando…</div><input id="inv-search" placeholder="Buscar material, lote o instrumental"><select id="inv-filter"><option value="">Todos</option><option value="material">Materiales</option><option value="instrumental">Instrumental</option><option value="alert">Con alertas</option></select><div id="inv-items"></div></div><div class="card"><h3>Registrar producto o lote</h3><form id="inv-form"><label>Nombre<input name="name" required maxlength="200"></label><label>Tipo<select name="kind"><option value="material">Material</option><option value="instrumental">Instrumental</option></select></label><label>Unidad<input name="unit" required value="unidad"></label><label>Existencia inicial<input name="quantity" type="number" min="0" step="1" required value="0"></label><label>Existencia mínima<input name="minimum" type="number" min="0" step="1" required value="1"></label><label>Lote<input name="lot"></label><label>Caducidad<input name="expiry" type="date"></label><label>Proveedor<input name="supplier"></label><label>Costo unitario MXN<input name="cost" type="number" min="0" step="0.01" required value="0"></label><label>Ubicación<input name="location"></label><button class="btn" type="submit">Guardar producto</button><p id="inv-msg"></p></form></div><div class="card"><h3>Últimos 200 movimientos</h3><div id="inv-moves"></div></div></main></div>`;
+ const get=id=>document.getElementById(id),form=get('inv-form'),items=get('inv-items'),summary=get('inv-summary'),moves=get('inv-moves');let data=[];
+ get('inv-back').onclick=privateHub;
+ function draw(){const q=get('inv-search').value.toLowerCase(),f=get('inv-filter').value;items.innerHTML=data.filter(x=>(!f||f===x.kind||f==='alert'&&alerts(x).length)&&[x.name,x.lot,x.location].join(' ').toLowerCase().includes(q)).map(x=>`<section style="border:1px solid #cde1e8;border-radius:14px;padding:14px;margin:12px 0"><h3>${safe(x.name)}</h3><strong>${x.quantity} ${safe(x.unit)}</strong><p style="color:${alerts(x).length?'#a52b36':'#147642'}">${[states[x.state],...alerts(x)].join(' · ')}</p><small>Lote: ${safe(x.lot||'—')} · Caducidad: ${safe(x.expiry||'—')} · Ubicación: ${safe(x.location||'—')} · Proveedor: ${safe(x.supplier||'—')} · Costo: ${(x.cost_cents/100).toFixed(2)}</small><div style="display:flex;gap:10px;margin:12px 0"><button class="btn" data-move="${safe(x.id)}" data-dir="1">Entrada</button><button class="btn secondary" data-move="${safe(x.id)}" data-dir="-1">Salida</button></div><label>Estado<select data-state="${safe(x.id)}">${Object.entries(states).map(([k,v])=>`<option value="${k}" ${x.state===k?'selected':''}>${v}</option>`).join('')}</select></label></section>`).join('')||'<p>No hay productos.</p>';
+ items.querySelectorAll('[data-move]').forEach(b=>b.onclick=async()=>{const raw=prompt('Cantidad de unidades:','1');if(raw===null)return;const n=Number(raw);if(!Number.isSafeInteger(n)||n<=0)return alert('Cantidad inválida');const reason=prompt('Motivo:',b.dataset.dir==='1'?'Compra o reposición':'Consumo o entrega');if(!reason?.trim())return;b.disabled=true;try{await api('inventory','POST',{action:'move',id:b.dataset.move,delta:n*Number(b.dataset.dir),reason});await load()}catch(e){alert(e.message);b.disabled=false}});
+ items.querySelectorAll('[data-state]').forEach(b=>b.onchange=async()=>{b.disabled=true;try{await api('inventory','PATCH',{action:'state',id:b.dataset.state,state:b.value});await load()}catch(e){alert(e.message);await load()}})}
+ async function load(){try{const d=await api('inventory');if(!summary.isConnected)return;data=d.items;summary.textContent=data.length+' productos/lotes · '+data.filter(x=>alerts(x).length).length+' con alertas (caducidad próxima: 30 días)';draw();moves.innerHTML=d.moves.map(x=>`<p><b>${safe(x.name)}</b> · ${x.delta>0?'+':''}${x.delta} ${safe(x.unit)}<br>${safe(x.reason)} · ${safe(x.created_at)}</p>`).join('')||'<p>Sin movimientos.</p>'}catch(e){summary.textContent='No se pudo consultar: '+e.message}}
+ get('inv-search').oninput=draw;get('inv-filter').onchange=draw;
+ form.onsubmit=async e=>{e.preventDefault();const d=Object.fromEntries(new FormData(form)),b=form.querySelector('button'),msg=get('inv-msg');b.disabled=true;try{await api('inventory','POST',{...d,action:'item',quantity:Number(d.quantity),minimum:Number(d.minimum),cost_cents:Math.round(Number(d.cost)*100)});form.reset();msg.textContent='Producto guardado.';await load()}catch(e){msg.textContent=e.message}finally{b.disabled=false}};
+ load();window.scrollTo(0,0);
+}
   function financeView(){
     const today=new Date(Date.now()-6*3600000).toISOString().slice(0,10);
     const fmt=n=>new Intl.NumberFormat('es-MX',{style:'currency',currency:'MXN'}).format(n/100);
