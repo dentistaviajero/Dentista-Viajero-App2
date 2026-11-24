@@ -106,6 +106,7 @@
   };
 
   function privateHub() {
+    window.dvNav?.enter('privateHub',()=>privateHub());
     app.innerHTML = `<div class="dv-home">
       <div class="dv-top"><button class="dv-icon" id="dv-private-back" aria-label="Volver a inicio">←</button><strong>Administración privada</strong><span aria-hidden="true">▣</span></div>
       <main class="dv-private-main">
@@ -125,6 +126,7 @@
 
 
 function inventoryView(){
+    window.dvNav?.enter('inventoryView',inventoryView);
  const today=new Date(Date.now()-21600000).toISOString().slice(0,10),soon=new Date(Date.parse(today)+30*86400000).toISOString().slice(0,10);
  const states={stock:'Disponible',uso:'En uso',mantenimiento:'En mantenimiento',fuera_servicio:'Fuera de servicio'};
  const alerts=x=>[...(x.quantity===0?['Agotado']:x.quantity<=x.minimum?['Stock bajo']:[]),...(x.expiry&&x.expiry<today?['Caducado — no utilizar']:x.expiry&&x.expiry<=soon?['Próximo a caducar']:[])];
@@ -140,6 +142,7 @@ function inventoryView(){
  load();window.scrollTo(0,0);
 }
   function financeView(){
+    window.dvNav?.enter('financeView',financeView);
     const today=new Date(Date.now()-6*3600000).toISOString().slice(0,10);
     const fmt=n=>new Intl.NumberFormat('es-MX',{style:'currency',currency:'MXN'}).format(n/100);
     const dateShift=(d,n)=>new Date(Date.parse(d)+n*86400000).toISOString().slice(0,10);
@@ -155,6 +158,7 @@ function inventoryView(){
   }
 
   async function printHub() {
+    window.dvNav?.enter('printHub',()=>printHub());
     app.innerHTML = `<div class="dv-home">
       <div class="dv-top">
         <button class="dv-icon" id="ph-back">←</button>
