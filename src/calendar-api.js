@@ -24,8 +24,8 @@ export async function calendarAPI(req,env){const u=new URL(req.url),p=u.pathname
  if(p==='/api/calendar/status'&&m==='GET'){const row=await env.DB.prepare('SELECT id FROM dv_calendar_auth WHERE id=1').first();return j({connected:!!row,credentials:!!(cid(env)&&cs(env))})}
  if(p==='/api/calendar/connect'&&m==='GET'){if(!cid(env)||!cs(env))return bad('Faltan GOOGLE_CLIENT_ID y GOOGLE_CLIENT_SECRET en Cloudflare',503);const state=crypto.randomUUID();const params=new URLSearchParams({client_id:cid(env),redirect_uri:redirect,response_type:'code',scope:'https://www.googleapis.com/auth/calendar.events',access_type:'offline',prompt:'consent',state});return new Response(null,{status:302,headers:{Location:'https://accounts.google.com/o/oauth2/v2/auth?'+params,'Set-Cookie':`dv_oauth=${state}; HttpOnly; Secure; SameSite=Lax; Path=/api/calendar; Max-Age=600`}})}
  if(p==='/api/calendar/sync'&&m==='POST')return j({ok:true,imported:await sync(env)});
- if(p==='/api/calendar/today'&&m==='GET'){
- const date=localDay(new Date()),start=iso(date+'T00:00:00-06:00'),end=iso(new Date(new Date(start).getTime()+86400000));
+ if((p==='/api/calendar/today'||p==='/api/calendar/week')&&m==='GET'){
+ const date=localDay(new Date()),start=iso(date+'T00:00:00-06:00'),end=iso(new Date(new Date(start).getTime()+(p.endsWith('/week')?7:1)*86400000));
  const rows=(await env.DB.prepare("SELECT * FROM dv_appointments WHERE inicio>=? AND inicio<? ORDER BY inicio").bind(start,end).all()).results;
  const local=rows.filter(a=>!['cancelada','descartada'].includes(a.estado)).map(fields);
  try{
