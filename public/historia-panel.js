@@ -52,5 +52,5 @@
  odonto=function(){active=true;return open('odontograma')};
  visits=function(){active=true;return open('notas')};
  printables=function(){active=true;current='notas';return oldPrint()};
- window.dvHistoriaAbrir=()=>ficha();
+ window.dvHistoriaAbrir=()=>ficha();window.dvClinicalLeave=()=>{active=false};
 })();
