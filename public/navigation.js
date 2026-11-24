@@ -1,6 +1,6 @@
 /* Historial de navegación sin datos clínicos en URL o almacenamiento. */
 (()=>{
- const browser=window.history, routes=new Map(); if(!browser||typeof browser.pushState!=='function'||typeof browser.replaceState!=='function')return;let current=null,seq=0,epoch=crypto.randomUUID(),restoring=false;
+ const browser=window.dvNativeHistory, routes=new Map(); if(!browser||typeof browser.pushState!=='function'||typeof browser.replaceState!=='function')return;let current=null,seq=0,epoch=crypto.randomUUID(),restoring=false;
  function reset(){routes.clear();current=null;epoch=crypto.randomUUID();try{browser.replaceState({dvEpoch:epoch,dvKey:0},'')}catch(e){console.warn(e)}}
  function enter(key,render){if(restoring)return;if(current?.key===key){current.render=render;return}const id=++seq;const route={key,render,id};routes.set(id,route);try{if(!current)browser.replaceState({dvEpoch:epoch,dvKey:id},'');else browser.pushState({dvEpoch:epoch,dvKey:id},'');current=route}catch(e){console.warn('Navegación no disponible',e)}}
  window.dvNav={enter,reset};
