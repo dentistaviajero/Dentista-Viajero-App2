@@ -4,7 +4,7 @@ const err=(m,status=400)=>out({error:m},status);
 const newid=()=>crypto.randomUUID();
 const validId=x=>typeof x==='string'&&/^[a-f0-9-]{36}$/i.test(x);
 const clean=(x,max=180)=>typeof x==='string'?x.trim().slice(0,max):'';
-const findings=['SRB','CL','CD','CB','HMI','MS','Otro'];
+const findings=['SRB','CL','CD','CB','BX','HMI','MS','Otro'];
 const integer=(x,max)=>Number.isInteger(Number(x))&&Number(x)>=0&&Number(x)<=max;
 async function body(req){try{return await req.json()}catch{return null}}
 export async function escuelasAPI(req,env){
@@ -12,17 +12,26 @@ export async function escuelasAPI(req,env){
  if(!p.startsWith('/api/escuelas/'))return null;
  const route=p.slice('/api/escuelas/'.length).split('/').filter(Boolean);
  const [kind,id,sub]=route;
+ if(kind==='plantel'&&validId(id)&&m==='PATCH'){
+ const d=await body(req);if(!d||!clean(d.nombre))return err('Nombre obligatorio');
+ await db.prepare('UPDATE dv2_schools SET nombre=?,localidad=? WHERE id=?').bind(clean(d.nombre),clean(d.localidad),id).run();return out({ok:true});
+ }
+ if(kind==='plantel'&&validId(id)&&m==='DELETE'){
+ const count=await db.prepare('SELECT COUNT(*) n FROM dv2_school_students a JOIN dv2_school_groups g ON g.id=a.group_id WHERE g.school_id=?').bind(id).first();
+ if(count?.n)return err('La escuela contiene alumnos; no se puede eliminar sin preservar sus evaluaciones.',409);
+ await db.batch([db.prepare('DELETE FROM dv2_school_groups WHERE school_id=? AND NOT EXISTS (SELECT 1 FROM dv2_school_students a JOIN dv2_school_groups g ON g.id=a.group_id WHERE g.school_id=?)').bind(id,id),db.prepare('DELETE FROM dv2_schools WHERE id=? AND NOT EXISTS (SELECT 1 FROM dv2_school_groups WHERE school_id=?)').bind(id,id)]);return out({ok:true});
+ }
  if(kind==='grupos'&&m==='GET'){
   if(!validId(u.searchParams.get('escuela')))return err('Escuela inválida');
   return out((await db.prepare('SELECT * FROM dv2_school_groups WHERE school_id=? ORDER BY grado,grupo').bind(u.searchParams.get('escuela')).all()).results);
  }
  if(kind==='grupos'&&m==='POST'){
-  const d=await body(req);if(!d||!validId(d.school_id)||!clean(d.grado,30)||!clean(d.grupo,30))return err('Faltan escuela, grado o grupo');
+  const d=await body(req);if(!d||!validId(d.school_id)||!clean(d.grado,30))return err('Faltan escuela o grado');
   const school=await db.prepare('SELECT id FROM dv2_schools WHERE id=?').bind(d.school_id).first();if(!school)return err('Escuela no encontrada',404);
   const gid=newid();await db.prepare('INSERT INTO dv2_school_groups(id,school_id,grado,grupo,maestro) VALUES(?,?,?,?,?)').bind(gid,d.school_id,clean(d.grado,30),clean(d.grupo,30),clean(d.maestro)).run();return out({id:gid},201);
  }
  if(kind==='grupos'&&validId(id)&&m==='PATCH'){
-  const d=await body(req);if(!d||!clean(d.grado,30)||!clean(d.grupo,30))return err('Grado y grupo obligatorios');
+  const d=await body(req);if(!d||!clean(d.grado,30))return err('Grado obligatorio');
   await db.prepare('UPDATE dv2_school_groups SET grado=?,grupo=?,maestro=? WHERE id=?').bind(clean(d.grado,30),clean(d.grupo,30),clean(d.maestro),id).run();return out({ok:true});
  }
  if(kind==='grupos'&&validId(id)&&m==='DELETE'){
