@@ -33,6 +33,28 @@ async function finance(req,db,u,m){
  if(m==='PATCH'){const d=await read(req);if(!d||typeof d.id!=='string'||d.action!=='void')return E('Solicitud inválida');await db.prepare("UPDATE dv_finance SET voided=1 WHERE id=?").bind(d.id).run();return J({ok:true})}
  return E('Método no permitido',405);
 }
+
+async function inventory(req,db,u,m){
+ await db.batch([
+ db.prepare("CREATE TABLE IF NOT EXISTS dv_inventory (id TEXT PRIMARY KEY,name TEXT NOT NULL,kind TEXT NOT NULL,unit TEXT NOT NULL,lot TEXT NOT NULL DEFAULT '',expiry TEXT NOT NULL DEFAULT '',supplier TEXT NOT NULL DEFAULT '',cost_cents INTEGER NOT NULL DEFAULT 0,minimum INTEGER NOT NULL DEFAULT 0,location TEXT NOT NULL DEFAULT '',state TEXT NOT NULL DEFAULT 'stock',created_at TEXT DEFAULT CURRENT_TIMESTAMP)"),
+ db.prepare("CREATE TABLE IF NOT EXISTS dv_inventory_moves (id TEXT PRIMARY KEY,item_id TEXT NOT NULL,delta INTEGER NOT NULL,reason TEXT NOT NULL,created_at TEXT DEFAULT CURRENT_TIMESTAMP)"),
+ db.prepare("CREATE INDEX IF NOT EXISTS dv_inventory_moves_item ON dv_inventory_moves(item_id)")]);
+ if(m==='GET'){return J({items:(await db.prepare("SELECT i.*,COALESCE((SELECT SUM(delta) FROM dv_inventory_moves WHERE item_id=i.id),0) AS quantity FROM dv_inventory i ORDER BY name,expiry").all()).results,moves:(await db.prepare("SELECT m.*,i.name,i.unit,i.lot FROM dv_inventory_moves m JOIN dv_inventory i ON i.id=m.item_id ORDER BY m.created_at DESC,m.id DESC LIMIT 200").all()).results})}
+ const d=await read(req);if(!d)return E('Datos inválidos');
+ const short=(x,n=200)=>typeof x==='string'&&x.length<=n;
+ if(m==='POST'&&d.action==='item'){
+ if(!short(d.name)||!d.name.trim()||!['material','instrumental'].includes(d.kind)||!short(d.unit,40)||!d.unit.trim()||!['lot','expiry','supplier','location'].every(k=>short(d[k]||''))||!Number.isSafeInteger(d.cost_cents)||d.cost_cents<0||!Number.isSafeInteger(d.minimum)||d.minimum<0||!Number.isSafeInteger(d.quantity)||d.quantity<0||d.quantity>1000000)return E('Producto inválido');
+ if(d.expiry&&(!/^\d{4}-\d{2}-\d{2}$/.test(d.expiry)||isNaN(Date.parse(d.expiry))||new Date(d.expiry).toISOString().slice(0,10)!==d.expiry))return E('Caducidad inválida');
+ const id=uid();await db.batch([db.prepare("INSERT INTO dv_inventory(id,name,kind,unit,lot,expiry,supplier,cost_cents,minimum,location) VALUES(?,?,?,?,?,?,?,?,?,?)").bind(id,d.name.trim(),d.kind,d.unit,d.lot||'',d.expiry||'',d.supplier||'',d.cost_cents,d.minimum,d.location||''),db.prepare("INSERT INTO dv_inventory_moves(id,item_id,delta,reason) VALUES(?,?,?,?)").bind(uid(),id,d.quantity,'Existencia inicial')]);return J({id},201);
+ }
+ if(m==='POST'&&d.action==='move'){
+ if(!short(d.id,80)||!Number.isSafeInteger(d.delta)||!d.delta||Math.abs(d.delta)>1000000||!short(d.reason,300)||!d.reason.trim())return E('Movimiento inválido');
+ const result=await db.prepare("INSERT INTO dv_inventory_moves(id,item_id,delta,reason) SELECT ?,id,?,? FROM dv_inventory WHERE id=? AND COALESCE((SELECT SUM(delta) FROM dv_inventory_moves WHERE item_id=dv_inventory.id),0)+?>=0").bind(uid(),d.delta,d.reason.trim(),d.id,d.delta).run();if(!result.meta.changes)return E('Existencia insuficiente o producto inexistente',409);return J({ok:true});
+ }
+ if(m==='PATCH'&&d.action==='state'){if(!short(d.id,80)||!['stock','uso','mantenimiento','fuera_servicio'].includes(d.state))return E('Estado inválido');await db.prepare("UPDATE dv_inventory SET state=? WHERE id=?").bind(d.state,d.id).run();return J({ok:true})}
+ return E('Solicitud inválida');
+}
+
 async function api(req,env){const db=env.DB;if(!db)return E('Falta enlace DB',503);const u=new URL(req.url),p=u.pathname,m=req.method;
  if(m!=='GET'&&!origin(req))return E('Origen no permitido',403);
  if(p==='/api/login'&&m==='POST'){
@@ -46,6 +68,7 @@ async function api(req,env){const db=env.DB;if(!db)return E('Falta enlace DB',50
  if(!await valid(req,env))return E('Sesión no autorizada',401);
  if(p==='/api/me')return J({ok:true});
  if(p==='/api/finance')return finance(req,db,u,m);
+ if(p==='/api/inventory')return inventory(req,db,u,m);
  const calendarResponse=await calendarAPI(req,env);if(calendarResponse)return calendarResponse;
  const respuestaSeguimiento = await seguimientoAPI(req,env);
  if(respuestaSeguimiento)return respuestaSeguimiento;
