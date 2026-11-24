@@ -19,6 +19,20 @@ const safe=d=>Object.values(d).every(v=>v===null||str(v)||typeof v==='number');
 async function audit(db,entity,id,action){await db.prepare('INSERT INTO dv2_audit(id,entity,entity_id,action) VALUES(?,?,?,?)').bind(uid(),entity,id,action).run()}
 async function ensurePatientSexColumn(db){const cols=(await db.prepare('PRAGMA table_info(dv2_patients)').all()).results;if(cols.some(c=>c.name==='sexo'))return;try{await db.prepare('ALTER TABLE dv2_patients ADD COLUMN sexo TEXT').run()}catch(err){if(!/duplicate column name/i.test(String(err?.message||err)))throw err}}
 const tables=['dv2_patients','dv2_histories','dv2_marks','dv2_tooth_notes','dv2_visits','dv2_quotes','dv2_payments','dv2_schools'];
+async function finance(req,db,u,m){
+ await db.prepare("CREATE TABLE IF NOT EXISTS dv_finance (id TEXT PRIMARY KEY, day TEXT NOT NULL, kind TEXT NOT NULL, category TEXT NOT NULL, concept TEXT NOT NULL, amount_cents INTEGER NOT NULL, voided INTEGER NOT NULL DEFAULT 0, created_at TEXT DEFAULT CURRENT_TIMESTAMP)").run();
+ const dateOK=x=>typeof x==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(x)&&!isNaN(Date.parse(x))&&new Date(x).toISOString().slice(0,10)===x;
+ if(m==='GET'){
+ const from=u.searchParams.get('from'),to=u.searchParams.get('to');if(!dateOK(from)||!dateOK(to)||from>to)return E('Fechas inválidas');
+ const manual=(await db.prepare("SELECT * FROM dv_finance WHERE day BETWEEN ? AND ? AND voided=0 ORDER BY day DESC,created_at DESC").bind(from,to).all()).results;
+ const payments=(await db.prepare("SELECT p.id,date(p.created_at,'-6 hours') AS day,'income' AS kind,'consultorio' AS category,COALESCE(p.concept,'Abono') AS concept,p.amount_cents,pt.folio FROM dv2_payments p LEFT JOIN dv2_patients pt ON pt.id=p.patient_id WHERE date(p.created_at,'-6 hours') BETWEEN ? AND ? ORDER BY p.created_at DESC").bind(from,to).all()).results;
+ const debt=await db.prepare("SELECT COALESCE(SUM(MAX(0,COALESCE(q.total,0)-COALESCE(p.total,0))),0) AS total FROM dv2_patients t LEFT JOIN (SELECT patient_id,SUM(amount_cents) total FROM dv2_quotes WHERE status!='cancelado' GROUP BY patient_id) q ON q.patient_id=t.id LEFT JOIN (SELECT patient_id,SUM(amount_cents) total FROM dv2_payments GROUP BY patient_id) p ON p.patient_id=t.id").first();
+ return J({rows:[...manual.map(x=>({...x,source:'manual'})),...payments.map(x=>({...x,source:'payment'}))].sort((a,b)=>b.day.localeCompare(a.day)),quoted_pending_cents:debt.total});
+ }
+ if(m==='POST'){const d=await read(req);if(!d||!dateOK(d.day)||!['income','expense'].includes(d.kind)||!['consultorio','combi','personal'].includes(d.category)||typeof d.concept!=='string'||!d.concept.trim()||d.concept.length>300||!Number.isSafeInteger(d.amount_cents)||d.amount_cents<=0||d.amount_cents>100000000000)return E('Movimiento inválido');const id=uid();await db.prepare("INSERT INTO dv_finance(id,day,kind,category,concept,amount_cents) VALUES(?,?,?,?,?,?)").bind(id,d.day,d.kind,d.category,d.concept.trim(),d.amount_cents).run();return J({id},201)}
+ if(m==='PATCH'){const d=await read(req);if(!d||typeof d.id!=='string'||d.action!=='void')return E('Solicitud inválida');await db.prepare("UPDATE dv_finance SET voided=1 WHERE id=?").bind(d.id).run();return J({ok:true})}
+ return E('Método no permitido',405);
+}
 async function api(req,env){const db=env.DB;if(!db)return E('Falta enlace DB',503);const u=new URL(req.url),p=u.pathname,m=req.method;
  if(m!=='GET'&&!origin(req))return E('Origen no permitido',403);
  if(p==='/api/login'&&m==='POST'){
@@ -31,6 +45,7 @@ async function api(req,env){const db=env.DB;if(!db)return E('Falta enlace DB',50
  if(p==='/api/logout'&&m==='POST')return new Response('{"ok":true}',{headers:{'content-type':'application/json','set-cookie':'dv_session=; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=0'}});
  if(!await valid(req,env))return E('Sesión no autorizada',401);
  if(p==='/api/me')return J({ok:true});
+ if(p==='/api/finance')return finance(req,db,u,m);
  const calendarResponse=await calendarAPI(req,env);if(calendarResponse)return calendarResponse;
  const respuestaSeguimiento = await seguimientoAPI(req,env);
  if(respuestaSeguimiento)return respuestaSeguimiento;
