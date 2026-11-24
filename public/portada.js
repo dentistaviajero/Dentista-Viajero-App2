@@ -204,12 +204,26 @@ function inventoryView(){
               data-patient-index="${i}">Elegir paciente</button></p>
           </div>`).join('') || '<p>No hay coincidencias.</p>';
 
-        box.querySelectorAll('[data-patient-index]').forEach(b =>
-          b.onclick = () => {
-            patient = filtered[Number(b.dataset.patientIndex)];
+        box.querySelectorAll('[data-patient-index]').forEach(b => {
+          let lastTap=0;
+          b.style.touchAction='manipulation';
+          b.onclick=()=>{
+            const chosen=filtered[Number(b.dataset.patientIndex)];
+            if(!chosen)return;
+            patient=chosen;
+            const now=performance.now();
+            if(lastTap&&now-lastTap<=450){
+              lastTap=0;
+              const pid=chosen.id;
+              const open=async()=>{patient=await api('patients/'+encodeURIComponent(pid));window.dvClinicalLeave?.();printables();window.scrollTo(0,0)};
+              window.dvNav?.enter('patient-print:'+pid,open);
+              window.dvClinicalLeave?.();printables();window.scrollTo(0,0);
+              return;
+            }
+            lastTap=now;
             patientPrintMenu();
-          }
-        );
+          };
+        });
       };
       document.getElementById('ph-search').oninput = draw;
       draw();
