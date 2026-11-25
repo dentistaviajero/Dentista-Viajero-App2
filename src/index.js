@@ -77,7 +77,7 @@ async function api(req,env){const db=env.DB;if(!db)return E('Falta enlace DB',50
  if(respuestaClinicaV4)return respuestaClinicaV4;
  const respuestaEscuelas = await escuelasAPI(req,env);
 if(respuestaEscuelas)return respuestaEscuelas;
- if(p==='/api/patients'&&m==='GET'){await ensurePatientSexColumn(db);return J((await db.prepare('SELECT * FROM dv2_patients ORDER BY COALESCE(updated_at,created_at) DESC, folio DESC').all()).results)}
+ if(p==='/api/patients'&&m==='GET'){await ensurePatientSexColumn(db);return J((await db.prepare("SELECT p.*, (SELECT MAX(COALESCE(NULLIF(json_extract(CASE WHEN json_valid(v.data) THEN v.data ELSE '{}' END,'$.fecha_atencion'),''),substr(v.created_at,1,10))) FROM dv2_visits v WHERE v.patient_id=p.id AND json_extract(CASE WHEN json_valid(v.data) THEN v.data ELSE '{}' END,'$.tipo_atencion')='preventiva') AS ultima_prevencion_real FROM dv2_patients p ORDER BY COALESCE(p.updated_at,p.created_at) DESC, p.folio DESC").all()).results)}
  if(p==='/api/patients'&&m==='POST'){
   await ensurePatientSexColumn(db);
   const d=await read(req);if(!d||!str(d.nombre)||!d.nombre.trim())return E('Nombre obligatorio');const x=fields(d,allow.patients);x.fecha_ingreso=x.fecha_ingreso||new Date(Date.now()-21600000).toISOString().slice(0,10);if(!validIngreso(x.fecha_ingreso))return E('Fecha de ingreso inválida');if(!safe(x))return E('Datos inválidos');const id=uid();
