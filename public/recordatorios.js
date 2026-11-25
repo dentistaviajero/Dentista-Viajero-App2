@@ -13,7 +13,7 @@ function addButton(){if(active)return;const menu=$('.dv-home .dv-menu');if(!menu
 new MutationObserver(addButton).observe($('#app')||document.body,{subtree:true,childList:true});addButton();
 function build(p,c,now){if(!phone(p.telefono)||p.archivado)return [];const out=[],first=(p.nombre||'').trim().split(/\s+/)[0]||'paciente',tutor=p.tutor_nombre?.trim()||'familia';const add=(kind,label,key,message)=>out.push({p,c,kind,label,key,message});
  if(c.clinical_permission==='yes'){
-  const y=age(p.fecha_nacimiento,c.preventive_date);const next=c.next_date||(y===null?'':months(c.preventive_date,y<5?3:6));
+  const real=[c.preventive_date,p.ultima_prevencion_real].filter(valid).sort().at(-1);const ingreso=p.fecha_ingreso||p.created_at?.slice(0,10);const base=real||ingreso;const next=real&&valid(c.next_date)&&c.next_date>real?c.next_date:months(base,6);
   if(valid(next)&&next<=now)add('preventivo','Prevención','prev:'+next,`Hola, ${tutor}. Te saludamos de Dentista Viajero Odontopediatra. Es momento de programar la revisión preventiva de ${first}. ¿Deseas que acordemos una fecha?`);
   if(valid(c.treatment_review_date)&&c.treatment_review_date<=now)add('tratamiento','Seguimiento','trat:'+c.treatment_review_date,`Hola, ${tutor}. Te saludamos de Dentista Viajero. Nos gustaría saber si desean agendar una revisión de seguimiento para ${first}.`);
   if(valid(c.appointment_date)&&c.appointment_time){const hrs=(new Date(c.appointment_date+'T'+c.appointment_time+':00')-new Date())/3600000;if(hrs>=5&&hrs<=24)add('cita','Cita','cita:'+c.appointment_date+'T'+c.appointment_time,`Hola, ${tutor}. Te recordamos la cita de ${first} el ${c.appointment_date} a las ${c.appointment_time}. ¿Nos confirmas asistencia?`)}
