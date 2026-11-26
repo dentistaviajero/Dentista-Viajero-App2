@@ -7,10 +7,18 @@ const date=s=>s===''||(/^\d{4}-\d{2}-\d{2}$/.test(s)&&!isNaN(Date.parse(s+'T12:0
 const time=s=>s===''||/^([01]\d|2[0-3]):[0-5]\d$/.test(s);
 export async function seguimientoAPI(req,env){
  const u=new URL(req.url),p=u.pathname,m=req.method;if(!p.startsWith('/api/seguimiento'))return null;const db=env.DB;
+ if(p==='/api/seguimiento/annie'&&m==='POST'){
+ let d;try{d=await req.json()}catch{return E('JSON inválido')}
+ const row=await db.prepare('SELECT p.telefono,p.tutor_parentesco,p.archivado,f.promo_permission FROM dv2_patients p JOIN dv2_followup f ON f.patient_id=p.id WHERE p.id=?').bind(String(d?.patient_id||'')).first();
+ if(!row||row.archivado||row.promo_permission!=='yes'||!/^(madre|mam[aá])$/i.test(String(row.tutor_parentesco||'').trim()))return E('Falta autorización o parentesco materno',403);
+ let tel=String(row.telefono||'').replace(/\D/g,'');if(tel.length===10)tel='52'+tel;if(!/^52\d{10}$/.test(tel))return E('Teléfono inválido');
+ await db.prepare('CREATE TABLE IF NOT EXISTS dv2_annie_sent (phone TEXT PRIMARY KEY, sent_at TEXT DEFAULT CURRENT_TIMESTAMP)').run();
+ await db.prepare('INSERT OR IGNORE INTO dv2_annie_sent(phone) VALUES(?)').bind(tel).run();return J({ok:true});
+ }
  if(p==='/api/seguimiento'&&m==='GET'){
   const rows=(await db.prepare('SELECT * FROM dv2_followup').all()).results;
   const events=(await db.prepare('SELECT * FROM dv2_followup_events ORDER BY created_at DESC LIMIT 3000').all()).results;
-  return J({rows,events});
+  await db.prepare('CREATE TABLE IF NOT EXISTS dv2_annie_sent (phone TEXT PRIMARY KEY, sent_at TEXT DEFAULT CURRENT_TIMESTAMP)').run();const annie=(await db.prepare('SELECT phone FROM dv2_annie_sent').all()).results;return J({rows,events,annie});
  }
  const match=p.match(/^\/api\/seguimiento\/([a-f0-9-]+)$/);
  if(match&&m==='PUT'){
