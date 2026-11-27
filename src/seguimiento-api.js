@@ -18,7 +18,7 @@ export async function seguimientoAPI(req,env){
  if(p==='/api/seguimiento'&&m==='GET'){
   const rows=(await db.prepare('SELECT * FROM dv2_followup').all()).results;
   const events=(await db.prepare('SELECT * FROM dv2_followup_events ORDER BY created_at DESC LIMIT 3000').all()).results;
-  await db.prepare('CREATE TABLE IF NOT EXISTS dv2_annie_sent (phone TEXT PRIMARY KEY, sent_at TEXT DEFAULT CURRENT_TIMESTAMP)').run();const annie=(await db.prepare('SELECT phone FROM dv2_annie_sent').all()).results;return J({rows,events,annie});
+  await db.prepare('CREATE TABLE IF NOT EXISTS dv2_annie_sent (phone TEXT PRIMARY KEY, sent_at TEXT DEFAULT CURRENT_TIMESTAMP)').run();const annie=(await db.prepare('SELECT phone FROM dv2_annie_sent').all()).results;const updates=(await db.prepare("SELECT * FROM dv2_followup_events WHERE kind='actualizacion'").all()).results;return J({rows,events,annie,updates});
  }
  const match=p.match(/^\/api\/seguimiento\/([a-f0-9-]+)$/);
  if(match&&m==='PUT'){
@@ -40,7 +40,7 @@ export async function seguimientoAPI(req,env){
  }
  if(p==='/api/seguimiento/evento'&&m==='POST'){
   let d;try{d=await req.json()}catch{return E('JSON inválido')}
-  if(!d||!/^[-a-f0-9]{36}$/.test(d.patient_id||'')||typeof d.event_key!=='string'||d.event_key.length>130||!['cumple','preventivo','tratamiento','cita','cobro','primer_contacto'].includes(d.kind)||!['abierto','enviado','omitido'].includes(d.status)||typeof d.message!=='string'||!d.message.trim()||d.message.length>2500)return E('Evento inválido');
+  if(!d||!/^[-a-f0-9]{36}$/.test(d.patient_id||'')||typeof d.event_key!=='string'||d.event_key.length>130||!['cumple','preventivo','tratamiento','cita','cobro','primer_contacto','actualizacion'].includes(d.kind)||!['abierto','enviado','omitido'].includes(d.status)||typeof d.message!=='string'||!d.message.trim()||d.message.length>2500)return E('Evento inválido');
   const c=await db.prepare('SELECT * FROM dv2_followup WHERE patient_id=?').bind(d.patient_id).first();if(!c)return E('Paciente sin configuración',403);
   if(d.kind==='primer_contacto'){
    if(!c.first_contact_enabled||c.first_contact_done||c.clinical_permission!=='pending'||c.billing_permission!=='pending'||c.promo_permission!=='pending')return E('Primer contacto no habilitado o ya realizado',403);
